@@ -22,7 +22,7 @@
 
 import ballerina/http;
 #foreach($import in $service.getImportsList())
-import $import.toLowerCase();
+import $import;
 #end
 
 # Generic type to wrap all implemented profiles.

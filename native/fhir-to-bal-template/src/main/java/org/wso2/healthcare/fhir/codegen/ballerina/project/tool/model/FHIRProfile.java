@@ -120,6 +120,11 @@ public class FHIRProfile<StructureDefinition> {
     }
 
     public void setPackagePrefix(BallerinaProjectToolConfig config) {
+        if (config.isGenerateIgModuleEnabled() && config.getGenerateIgModuleName() != null
+                && !config.getGenerateIgModuleName().isEmpty()) {
+            this.packagePrefix = config.getGenerateIgModuleName();
+            return;
+        }
         String igPackage = config.getVersionConfig().getDependentPackage();
         if (igPackage.contains("/")) {
             String pkgNameWithoutOrg = igPackage.split("/")[1];

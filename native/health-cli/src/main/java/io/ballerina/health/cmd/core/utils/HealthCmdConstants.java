@@ -36,6 +36,21 @@ public class HealthCmdConstants {
     public static final String CMD_CDS_HELP_TEXT_FILENAME = "ballerina-health-cds.help";
     public static final String CMD_DEFAULT_IG_NAME = "FHIR";
     public static final String CMD_DEFAULT_ORG_NAME = "healthcare";
+    public static final String CMD_DEFAULT_R4_DEPENDENT_PACKAGE = "ballerinax/health.fhir.r4.international401";
+    public static final String CMD_DEFAULT_R5_DEPENDENT_PACKAGE = "ballerinax/health.fhir.r5.international500";
+    public static final String CMD_DEFAULT_INTERNATIONAL_IG_DIR = "international";
+    public static final String CMD_DEFAULT_REGISTRY_URL = "https://packages.fhir.org";
+    public static final String CMD_DEFAULT_IG_CACHE_DIR = ".fhir-ig-cache";
+    public static final int CMD_DEFAULT_IG_HTTP_TIMEOUT_SECONDS = 60;
+    public static final String CMD_DEFAULT_R4_IG_PACKAGE_NAME = "hl7.fhir.r4.core";
+    public static final String CMD_DEFAULT_R4_IG_PACKAGE_VERSION = "4.0.1";
+    public static final String CMD_DEFAULT_R5_IG_PACKAGE_NAME = "hl7.fhir.r5.core";
+    public static final String CMD_DEFAULT_R5_IG_PACKAGE_VERSION = "5.0.0";
+    public static final String CMD_OPTION_IG_NAME = "--ig-name";
+    public static final String CMD_OPTION_IG_VERSION = "--ig-version";
+    public static final String CMD_OPTION_REGISTRY_URL = "--registry-url";
+    public static final String CMD_OPTION_IG_CACHE_DIR = "--ig-cache-dir";
+    public static final String CMD_OPTION_FORCE_IG_DOWNLOAD = "--force-ig-download";
     public static final String CMD_FHIR_MODE_TEMPLATE = "fhir:template";
     public static final String CMD_FHIR_MODE_CLIENT = "fhir:client";
     public static final String CMD_FHIR_MODE_PACKAGE = "fhir:package";
@@ -103,8 +118,12 @@ public class HealthCmdConstants {
         public static final String PKG_NAME_REQUIRED = "[ERROR] Package name [--package-name] is required for package "
                 + "generation.";
         public static final String GEN_ERROR = "[ERROR] Error occurred while generating the Ballerina artifacts.";
-        public static final String DEPENDENT_REQUIRED = "[ERROR] Dependent package [--dependent-package] is required "
-                + "for template generation.";
+        public static final String DEPENDENT_REQUIRED = "[ERROR] --dependent-package, --ig-name, or a resolvable spec "
+                + "path (local or registry download) is required for template generation.";
+        public static final String IG_DOWNLOAD_SUCCESS = "[INFO] Downloaded IG package ";
+        public static final String SPEC_PATH_REQUIRED = "[ERROR] FHIR specification path or --ig-name is required.";
+        public static final String USING_INTERNATIONAL_BASE = "[INFO] No custom IG specified. Using international "
+                + "base FHIR structure definitions with ";
         public static final String DEPENDENT_INCORRECT = "[ERROR] Format of the dependent package is incorrect.";
         public static final String INCLUDED_EXCLUDED_TOGETHER = "[ERROR] Both --included-profile and "
                 + "--excluded-profile cannot be used together.";

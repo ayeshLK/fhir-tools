@@ -22,7 +22,7 @@
 
 import ballerina/http;
 #foreach($import in $aggregatedService.getImportsList())
-import $import.toLowerCase();
+import $import;
 #end
 
 # Generic types to wrap all implemented profiles for each resource.

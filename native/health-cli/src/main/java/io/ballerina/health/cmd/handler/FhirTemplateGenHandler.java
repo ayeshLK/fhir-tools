@@ -27,16 +27,25 @@ import io.ballerina.health.cmd.core.exception.BallerinaHealthException;
 import io.ballerina.health.cmd.core.utils.ErrorMessages;
 import io.ballerina.health.cmd.core.utils.HealthCmdConstants;
 import io.ballerina.health.cmd.core.utils.HealthCmdUtils;
+import io.ballerina.health.cmd.core.utils.IgModuleNameUtils;
+import io.ballerina.health.cmd.core.utils.SpecificationPathUtils;
 import org.wso2.healthcare.codegen.tool.framework.commons.config.ToolConfig;
 import org.wso2.healthcare.codegen.tool.framework.commons.core.TemplateGenerator;
 import org.wso2.healthcare.codegen.tool.framework.commons.core.Tool;
 import org.wso2.healthcare.codegen.tool.framework.commons.exception.CodeGenException;
 import org.wso2.healthcare.codegen.tool.framework.commons.model.JsonConfigType;
 import org.wso2.healthcare.codegen.tool.framework.fhir.core.FHIRTool;
+import org.wso2.healthcare.fhir.ballerina.packagegen.tool.BallerinaPackageGenTool;
+import org.wso2.healthcare.fhir.ballerina.packagegen.tool.config.BallerinaPackageGenToolConfig;
 
+import java.io.File;
+import java.io.IOException;
 import java.io.PrintStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
 import java.util.Map;
 
 /**
@@ -49,6 +58,8 @@ public class FhirTemplateGenHandler implements Handler {
     private String packageVersion;
     private String fhirVersion;
     private String dependentPackage;
+    private boolean generateIgModule;
+    private String igModuleName;
 
     private String[] includedProfiles;
     private String[] excludedProfiles;
@@ -83,15 +94,24 @@ public class FhirTemplateGenHandler implements Handler {
         this.orgName = (String) argsMap.get("--org-name");
         this.packageVersion = (String) argsMap.get("--package-version");
         this.dependentPackage = (String) argsMap.get("--dependent-package");
+        boolean explicitDependentPackage = Boolean.TRUE.equals(argsMap.get("--explicit-dependent-package"));
+        this.generateIgModule = !explicitDependentPackage;
+        this.igModuleName = (String) argsMap.get("--ig-module-name");
         this.includedProfiles = (String[]) argsMap.get("--included-profile");
         this.excludedProfiles = (String[]) argsMap.get("--excluded-profile");
-        this.aggregate = (Boolean) argsMap.get("--aggregate");
+        Object aggregateArg = argsMap.get("--aggregate");
+        this.aggregate = aggregateArg instanceof Boolean ? (Boolean) aggregateArg : true;
         this.minimal = (Boolean) argsMap.get("--minimal");
         this.resources = (String) argsMap.get("--resources");
     }
 
     @Override
     public boolean execute(String specificationPath, String targetOutputPath) {
+        try {
+            applyInternationalBaseDefaults(specificationPath);
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to evaluate specification path for template generation", e);
+        }
 
         JsonElement toolExecConfigs = null;
         if (configJson != null) {
@@ -137,35 +157,44 @@ public class FhirTemplateGenHandler implements Handler {
                     JsonElement overrideConfig = new Gson().toJsonTree(fhirVersion.toLowerCase());
                     toolConfigInstance.overrideConfig("project.fhir.default_version", overrideConfig);
                 }
-                if (dependentPackage != null) {
-                    JsonElement overrideConfig = new Gson().toJsonTree(dependentPackage);
-                    JsonElement nameConfig =
-                            new Gson().toJsonTree(dependentPackage.substring(dependentPackage.lastIndexOf('/') + 1));
-                    toolConfigInstance.overrideConfig("project.package.dependentPackage", overrideConfig);
-                    toolConfigInstance.overrideConfig("project.package.namePrefix", nameConfig);
+                if (generateIgModule) {
+                    String resolvedIgModuleName = resolveIgModuleName(specificationPath);
+                    String igModuleSourcePath = generateIgModuleSource(specificationPath, targetOutputPath,
+                            toolExecConfig);
+                    JsonElement generateIgModuleEnabled = new Gson().toJsonTree(true);
+                    JsonElement generateIgModuleNameConfig = new Gson().toJsonTree(resolvedIgModuleName);
+                    JsonElement generateIgModuleSourceDir = new Gson().toJsonTree(igModuleSourcePath);
+                    toolConfigInstance.overrideConfig("project.generateIgModule.enabled", generateIgModuleEnabled);
+                    toolConfigInstance.overrideConfig("project.generateIgModule.name", generateIgModuleNameConfig);
+                    toolConfigInstance.overrideConfig("project.generateIgModule.sourceDir", generateIgModuleSourceDir);
+                } else {
+                    toolConfigInstance.overrideConfig("project.generateIgModule.enabled", new Gson().toJsonTree(false));
+                    if (dependentPackage != null && !dependentPackage.isEmpty()) {
+                        JsonElement overrideConfig = new Gson().toJsonTree(dependentPackage);
+                        JsonElement nameConfig = new Gson().toJsonTree(
+                                dependentPackage.substring(dependentPackage.lastIndexOf('/') + 1));
+                        toolConfigInstance.overrideConfig("project.package.dependentPackage", overrideConfig);
+                        toolConfigInstance.overrideConfig("project.package.namePrefix", nameConfig);
+                    }
                 }
                 toolConfigInstance.overrideConfig("project.package.igConfig", populateIGConfig(
                                 HealthCmdConstants.CMD_DEFAULT_IG_NAME,
                                 orgName,
+                                getEffectiveDependentPackage(),
                                 includedProfiles,
                                 excludedProfiles
                         )
                 );
 
-                // Configure aggregated API settings
-                if (aggregate) {
-                    JsonElement aggregateConfig = new Gson().toJsonTree(true);
-                    toolConfigInstance.overrideConfig("project.enableAggregatedApi", aggregateConfig);
-
-                    if (resources != null && !resources.trim().isEmpty()) {
-                        // Parse comma-separated resources and create JSON array
-                        String[] resourceArray = resources.split(",");
-                        JsonArray resourcesArray = new JsonArray();
-                        for (String resource : resourceArray) {
-                            resourcesArray.add(resource.trim());
-                        }
-                        toolConfigInstance.overrideConfig("project.aggregatedApis", resourcesArray);
+                // Configure aggregated API settings (default: enabled)
+                toolConfigInstance.overrideConfig("project.enableAggregatedApi", new Gson().toJsonTree(aggregate));
+                if (aggregate && resources != null && !resources.trim().isEmpty()) {
+                    String[] resourceArray = resources.split(",");
+                    JsonArray resourcesArray = new JsonArray();
+                    for (String resource : resourceArray) {
+                        resourcesArray.add(resource.trim());
                     }
+                    toolConfigInstance.overrideConfig("project.aggregatedApis", resourcesArray);
                 }
                 // Configure minimal generation settings
                 if (minimal) {
@@ -220,12 +249,121 @@ public class FhirTemplateGenHandler implements Handler {
         return false;
     }
 
-    private JsonObject populateIGConfig(String name, String orgName, String[] includedProfiles,
-                                        String[] excludedProfiles) {
+    private String resolveIgModuleName(String specificationPath) {
+        if (igModuleName != null && !igModuleName.isEmpty()) {
+            return igModuleName;
+        }
+        try {
+            return IgModuleNameUtils.inferIgModuleName(specificationPath);
+        } catch (IOException e) {
+            throw new RuntimeException("Unable to infer IG module name from specification", e);
+        }
+    }
+
+    private String generateIgModuleSource(String specificationPath, String targetOutputPath,
+                                          JsonObject toolExecConfig) {
+        try {
+            BallerinaPackageGenToolConfig packageToolConfig = new BallerinaPackageGenToolConfig();
+            String generatedIgPackagePath = Paths.get(targetOutputPath, ".generated-ig-package").toString();
+            Path generatedIgPackagePathObj = Paths.get(generatedIgPackagePath);
+            if (Files.exists(generatedIgPackagePathObj)) {
+                deleteRecursively(generatedIgPackagePathObj.toFile());
+            }
+            packageToolConfig.setTargetDir(generatedIgPackagePath);
+            packageToolConfig.setToolName(HealthCmdConstants.CMD_MODE_PACKAGE);
+            JsonObject packageExecConfig = configJson.getAsJsonObject("fhir").getAsJsonObject("tools")
+                    .getAsJsonObject(HealthCmdConstants.CMD_MODE_PACKAGE).getAsJsonObject("config");
+            packageToolConfig.configure(new JsonConfigType(packageExecConfig));
+
+            String packageNameToGenerate = getPackageNameForIgModule(packageExecConfig);
+            packageToolConfig.overrideConfig("packageConfig.name", new Gson().toJsonTree(packageNameToGenerate));
+            if (orgName != null && !orgName.isEmpty()) {
+                packageToolConfig.overrideConfig("packageConfig.org", new Gson().toJsonTree(orgName.toLowerCase()));
+            }
+            if (packageVersion != null && !packageVersion.isEmpty()) {
+                packageToolConfig.overrideConfig("packageConfig.packageVersion",
+                        new Gson().toJsonTree(packageVersion.toLowerCase()));
+            }
+            if (fhirVersion != null && !fhirVersion.isEmpty()) {
+                packageToolConfig.overrideConfig("packageConfig.fhirVersion", new Gson().toJsonTree(fhirVersion));
+            }
+
+            Tool packageTool = new BallerinaPackageGenTool();
+            packageTool.initialize(packageToolConfig);
+            TemplateGenerator packageTemplateGenerator = packageTool.execute(fhirToolLib.getToolContext());
+            if (packageTemplateGenerator != null) {
+                packageTemplateGenerator.generate(
+                        fhirToolLib.getToolContext(), packageTemplateGenerator.getGeneratorProperties());
+                HealthCmdUtils.engageChildTemplateGenerators(
+                        packageTemplateGenerator.getChildTemplateGenerator(),
+                        fhirToolLib.getToolContext(), packageTemplateGenerator.getGeneratorProperties());
+            }
+            return Paths.get(generatedIgPackagePath, packageNameToGenerate).toString();
+        } catch (Exception e) {
+            throw new RuntimeException("Error generating IG module source package", e);
+        }
+    }
+
+    private String getPackageNameForIgModule(JsonObject packageExecConfigObj) {
+        if (packageName != null && !packageName.isEmpty()) {
+            return packageName;
+        }
+        if (dependentPackage != null && dependentPackage.contains("/")) {
+            return dependentPackage.substring(dependentPackage.lastIndexOf('/') + 1);
+        }
+        return packageExecConfigObj.getAsJsonObject("packageConfigs").getAsJsonPrimitive("name").getAsString();
+    }
+
+    private void deleteRecursively(File file) {
+        if (file.isDirectory()) {
+            File[] children = file.listFiles();
+            if (children != null) {
+                for (File child : children) {
+                    deleteRecursively(child);
+                }
+            }
+        }
+        if (!file.delete()) {
+            throw new RuntimeException("Failed to delete file: " + file.getAbsolutePath());
+        }
+    }
+
+    private void applyInternationalBaseDefaults(String specificationPath) throws IOException {
+        boolean useInternationalBase = SpecificationPathUtils.isInternationalBaseSpecification(specificationPath);
+        if ((dependentPackage == null || dependentPackage.isEmpty()) && useInternationalBase) {
+            dependentPackage = getDefaultDependentPackageForFhirVersion();
+            printStream.println(HealthCmdConstants.PrintStrings.USING_INTERNATIONAL_BASE + dependentPackage + ".");
+        }
+        if (generateIgModule && useInternationalBase) {
+            generateIgModule = false;
+            printStream.println("[INFO] International base structure definitions detected. "
+                    + "Using published dependent package " + dependentPackage + " instead of embedding an IG module.");
+        }
+    }
+
+    private String getDefaultDependentPackageForFhirVersion() {
+        if (fhirVersion != null && fhirVersion.equalsIgnoreCase("r5")) {
+            return HealthCmdConstants.CMD_DEFAULT_R5_DEPENDENT_PACKAGE;
+        }
+        return HealthCmdConstants.CMD_DEFAULT_R4_DEPENDENT_PACKAGE;
+    }
+
+    private String getEffectiveDependentPackage() {
+        if (dependentPackage != null && !dependentPackage.isEmpty()) {
+            return dependentPackage;
+        }
+        return getDefaultDependentPackageForFhirVersion();
+    }
+
+    private JsonObject populateIGConfig(String name, String orgName, String dependentPackageName,
+                                        String[] includedProfiles, String[] excludedProfiles) {
 
         JsonObject igConfig = new JsonObject();
         igConfig.addProperty("implementationGuide", name);
-        String importStatement = orgName != null ? orgName : HealthCmdConstants.CMD_DEFAULT_ORG_NAME + "/" + name;
+        String importStatement = dependentPackageName;
+        if (orgName != null && !orgName.isEmpty() && !dependentPackageName.contains("/")) {
+            importStatement = orgName + "/" + dependentPackageName;
+        }
         igConfig.addProperty("importStatement", importStatement);
         igConfig.addProperty("enable", true);
         JsonArray includedProfilesArray = new JsonArray();

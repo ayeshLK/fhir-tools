@@ -53,6 +53,9 @@ public class BallerinaProjectToolConfig extends AbstractToolConfig {
     private boolean enableAggregatedApi;
     private List<String> aggregatedApis;
     private boolean minimalGeneration;
+    private boolean generateIgModuleEnabled;
+    private String generateIgModuleName;
+    private String generateIgModuleSourceDir;
 
     public BallerinaProjectToolConfig() {
         this.aggregatedApis = new ArrayList<>();
@@ -86,6 +89,17 @@ public class BallerinaProjectToolConfig extends AbstractToolConfig {
             }
             if (jsonConfigObj.getAsJsonArray("aggregatedApis") != null) {
                 populateAggregatedApis(jsonConfigObj.getAsJsonArray("aggregatedApis"));
+            }
+            if (jsonConfigObj.getAsJsonObject("generateIgModule") != null) {
+                JsonObject generateIgModuleConfig = jsonConfigObj.getAsJsonObject("generateIgModule");
+                if (generateIgModuleConfig.getAsJsonPrimitive("enabled") != null) {
+                    this.generateIgModuleEnabled = generateIgModuleConfig
+                            .getAsJsonPrimitive("enabled").getAsBoolean();
+                }
+                if (generateIgModuleConfig.getAsJsonPrimitive("name") != null) {
+                    this.generateIgModuleName = generateIgModuleConfig
+                            .getAsJsonPrimitive("name").getAsString();
+                }
             }
         }
         //todo: add toml type config handling
@@ -128,6 +142,15 @@ public class BallerinaProjectToolConfig extends AbstractToolConfig {
                         this.aggregatedApis.add(resourcesArray.get(i).getAsString());
                     }
                 }
+                break;
+            case "project.generateIgModule.enabled":
+                this.generateIgModuleEnabled = value.getAsBoolean();
+                break;
+            case "project.generateIgModule.name":
+                this.generateIgModuleName = value.getAsString();
+                break;
+            case "project.generateIgModule.sourceDir":
+                this.generateIgModuleSourceDir = value.getAsString();
                 break;
             default:
                 LOG.warn("Invalid config path: " + jsonPath);
@@ -234,4 +257,16 @@ public class BallerinaProjectToolConfig extends AbstractToolConfig {
     }
 
     public boolean isMinimalGeneration() { return minimalGeneration;}
+
+    public boolean isGenerateIgModuleEnabled() {
+        return generateIgModuleEnabled;
+    }
+
+    public String getGenerateIgModuleName() {
+        return generateIgModuleName;
+    }
+
+    public String getGenerateIgModuleSourceDir() {
+        return generateIgModuleSourceDir;
+    }
 }

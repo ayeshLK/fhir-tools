@@ -183,6 +183,10 @@ public abstract class AbstractBallerinaProjectTool extends AbstractFHIRTool {
         dependenciesMap.put("basePackage", fhirBaseImportStatement.toLowerCase());
         dependenciesMap.put("servicePackage", fhirServiceImportStatement.toLowerCase());
         dependenciesMap.put("dependentPackage", fhirInternationalImportStatement.toLowerCase());
+        dependenciesMap.put("useGenerateIgModule",
+                String.valueOf(getBallerinaProjectToolConfig().isGenerateIgModuleEnabled()));
+        dependenciesMap.put("generateIgModuleName",
+                getBallerinaProjectToolConfig().getGenerateIgModuleName());
     }
 
     protected abstract void populateBalService();

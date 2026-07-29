@@ -41,6 +41,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.logging.LogManager;
 
+import io.ballerina.health.cmd.core.config.IgRegistryConfig;
+import io.ballerina.health.cmd.core.utils.IgModuleNameUtils;
+import io.ballerina.health.cmd.core.utils.IgRegistryConfigLoader;
+import io.ballerina.health.cmd.core.utils.SpecificationPathResolver;
+
 import static io.ballerina.health.cmd.core.utils.HealthCmdConstants.*;
 
 @CommandLine.Command(name = "fhir", description = "Generates Ballerina service/client for FHIR contract " +
@@ -87,11 +92,14 @@ public class FhirSubCmd implements BLauncherCmd {
     @CommandLine.Option(names = "--dependent-package", description = "Dependent package name for the templates to be generated")
     private String dependentPackage;
 
+    @CommandLine.Option(names = "--ig-module-name", description = "Optional module name for embedded IG resources (default: inferred from the IG). Ignored when --dependent-package is set")
+    private String igModuleName;
+
     @CommandLine.Option(names = "--dependent-ig", description = "Dependent IG base URL and respective fully qualified Ballerina package name")
     private String[] dependentIgs;
 
-    @CommandLine.Option(names = "--aggregate", description = "Enable aggregated API mode to generate a single service with multiple FHIR resources")
-    private boolean aggregate;
+    @CommandLine.Option(names = "--aggregate", description = "Aggregated API mode (default: true). Pass --aggregate false for separate services per resource", defaultValue = "true", fallbackValue = "true", arity = "0..1")
+    private boolean aggregate = true;
 
     @CommandLine.Option(names = "--resources", description = "Comma-separated list of FHIR resources to include. If not specified, all available resources will be included")
     private String resources;
@@ -99,6 +107,23 @@ public class FhirSubCmd implements BLauncherCmd {
     @CommandLine.Option(names = "--minimal", description = "Enable minimal generation mode to skip .choreo folder, OAS files, .gitignore, and Ballerina.toml. Only generates core service files")
     private boolean minimal;
 
+    @CommandLine.Option(names = "--ig-name", description = "FHIR registry package id (e.g. hl7.fhir.us.core). Downloads from packages.fhir.org when no local spec path is given")
+    private String igName;
+
+    @CommandLine.Option(names = "--ig-version", description = "FHIR registry package version (e.g. 6.1.0). If omitted, interactively selects from published versions (or dist-tags.latest with --non-interactive)")
+    private String igVersion;
+
+    @CommandLine.Option(names = "--non-interactive", description = "Skip interactive IG version selection; use dist-tags.latest when --ig-version is omitted")
+    private boolean nonInteractive;
+
+    @CommandLine.Option(names = "--registry-url", description = "FHIR package registry base URL (default: https://packages.fhir.org)")
+    private String registryUrl;
+
+    @CommandLine.Option(names = "--ig-cache-dir", description = "Directory to cache downloaded IG .tgz files (default: .fhir-ig-cache under the working directory)")
+    private String igCacheDir;
+
+    @CommandLine.Option(names = "--force-ig-download", description = "Re-download and re-extract the IG package even if definitions already exist locally")
+    private boolean forceIgDownload;
 
     @CommandLine.Parameters(description = "Custom arguments")
     private List<String> argList;
@@ -140,9 +165,15 @@ public class FhirSubCmd implements BLauncherCmd {
             printStream.println(HealthCmdConstants.PrintStrings.HELP_ERROR);
             HealthCmdUtils.exitError(exitWhenFinish);
         }
-        if (!CMD_CONNECTOR.equals(mode) && (argList == null || argList.isEmpty())) {
-            //at minimum arg count is 1 (spec path)
+        if (!CMD_CONNECTOR.equals(mode) && !CMD_MODE_TEMPLATE.equals(mode) && !CMD_MODE_PACKAGE.equals(mode)
+                && (argList == null || argList.isEmpty())) {
             printStream.println(HealthCmdConstants.PrintStrings.INVALID_NUM_OF_ARGS);
+            printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
+            HealthCmdUtils.exitError(exitWhenFinish);
+        }
+        if (CMD_MODE_PACKAGE.equals(mode) && (argList == null || argList.isEmpty())
+                && (igName == null || igName.isEmpty()) && !canResolveSpecificationFromRegistry()) {
+            printStream.println(HealthCmdConstants.PrintStrings.SPEC_PATH_REQUIRED);
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
             HealthCmdUtils.exitError(exitWhenFinish);
         }
@@ -158,8 +189,10 @@ public class FhirSubCmd implements BLauncherCmd {
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
             HealthCmdUtils.exitError(exitWhenFinish);
         }
-        if (CMD_MODE_TEMPLATE.equals(mode) && (dependentPackage == null || dependentPackage.isEmpty())) {
-            // dependent package is a required param in template mode
+        if (CMD_MODE_TEMPLATE.equals(mode) &&
+                (dependentPackage == null || dependentPackage.isEmpty()) &&
+                (igName == null || igName.isEmpty()) &&
+                !canResolveSpecificationFromRegistry()) {
             printStream.println(HealthCmdConstants.PrintStrings.DEPENDENT_REQUIRED);
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
             HealthCmdUtils.exitError(exitWhenFinish);
@@ -172,9 +205,9 @@ public class FhirSubCmd implements BLauncherCmd {
                 HealthCmdUtils.exitError(exitWhenFinish);
             }
         }
-        if (CMD_MODE_TEMPLATE.equals(mode) && (dependentPackage == null || dependentPackage.isEmpty())) {
-            // dependent package is a required param in template mode
-            printStream.println(HealthCmdConstants.PrintStrings.DEPENDENT_REQUIRED);
+        if (!CMD_CONNECTOR.equals(mode) && igModuleName != null && !igModuleName.isEmpty()
+                && !IgModuleNameUtils.isValidBallerinaModuleName(igModuleName)) {
+            printStream.println("Invalid IG module name.");
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
             HealthCmdUtils.exitError(exitWhenFinish);
         }
@@ -226,20 +259,9 @@ public class FhirSubCmd implements BLauncherCmd {
     }
 
     public boolean engageSubCommand(String mode, List<String> argList) {
-
-        Map<String, Object> argsMap = new HashMap<>();
-        argsMap.put("--package-name", packageName);
-        argsMap.put("--org-name", orgName);
-        argsMap.put("--package-version", packageVersion);
-        argsMap.put("--included-profile", includedProfiles);
-        argsMap.put("--excluded-profile", excludedProfiles);
-        argsMap.put("--dependent-package", dependentPackage);
-        argsMap.put("--dependent-ig", dependentIgs);
-        argsMap.put("--aggregate", aggregate);
-        argsMap.put("--resources", resources);
-        argsMap.put("--minimal", minimal);
         getTargetOutputPath();
 
+        boolean explicitDependentPackage = dependentPackage != null && !dependentPackage.isEmpty();
         if (CMD_MODE_CONNECTOR.equals(mode)) {
             try {
                 specificationPath = HealthCmdUtils.getSpecificationPath(configPath, executionPath.toString());
@@ -248,14 +270,51 @@ public class FhirSubCmd implements BLauncherCmd {
                 throw new BLauncherException();
             }
         } else {
-            //spec path is the last argument
             try {
-                specificationPath = HealthCmdUtils.validateAndSetSpecificationPath(argList.get(argList.size() - 1), executionPath.toString());
+                String specPathArg = (argList == null || argList.isEmpty()) ? null : argList.get(argList.size() - 1);
+                IgRegistryConfig registryConfig = IgRegistryConfigLoader.load();
+                SpecificationPathResolver.ResolvedSpecification resolved =
+                        SpecificationPathResolver.resolve(new SpecificationPathResolver.ResolveRequest(
+                                mode,
+                                executionPath.toString(),
+                                specPathArg,
+                                igName,
+                                igVersion,
+                                registryUrl,
+                                igCacheDir,
+                                forceIgDownload,
+                                nonInteractive,
+                                null,
+                                registryConfig,
+                                printStream
+                        ));
+                specificationPath = resolved.specificationPath();
+                if (CMD_MODE_TEMPLATE.equals(mode) && !explicitDependentPackage
+                        && resolved.mappedDependentPackage() != null) {
+                    printStream.println("[INFO] IG " + resolved.igPackageName()
+                            + " maps to published package " + resolved.mappedDependentPackage()
+                            + ". Embedding IG resources in the template (use --dependent-package to import that package instead).");
+                }
             } catch (BallerinaHealthException e) {
+                printStream.println(e.getMessage());
                 printStream.println(HealthCmdConstants.PrintStrings.INVALID_SPEC_PATH);
                 throw new BLauncherException();
             }
         }
+
+        Map<String, Object> argsMap = new HashMap<>();
+        argsMap.put("--package-name", packageName);
+        argsMap.put("--org-name", orgName);
+        argsMap.put("--package-version", packageVersion);
+        argsMap.put("--included-profile", includedProfiles);
+        argsMap.put("--excluded-profile", excludedProfiles);
+        argsMap.put("--explicit-dependent-package", explicitDependentPackage);
+        argsMap.put("--dependent-package", explicitDependentPackage ? dependentPackage : null);
+        argsMap.put("--ig-module-name", igModuleName);
+        argsMap.put("--dependent-ig", dependentIgs);
+        argsMap.put("--aggregate", aggregate);
+        argsMap.put("--resources", resources);
+        argsMap.put("--minimal", minimal);
 
         Handler toolHandler = null;
         try {
@@ -272,6 +331,30 @@ public class FhirSubCmd implements BLauncherCmd {
     /**
      * This util is to get the output Path.
      */
+    private boolean canResolveSpecificationFromRegistry() {
+        if (igName != null && !igName.isEmpty()) {
+            return true;
+        }
+        if (argList != null && !argList.isEmpty()) {
+            return true;
+        }
+        return SpecificationPathResolver.canResolveWithoutLocalSpec(
+                new SpecificationPathResolver.ResolveRequest(
+                        mode,
+                        executionPath.toString(),
+                        null,
+                        igName,
+                        igVersion,
+                        registryUrl,
+                        igCacheDir,
+                        forceIgDownload,
+                        nonInteractive,
+                        null,
+                        IgRegistryConfigLoader.load(),
+                        printStream
+                ));
+    }
+
     private void getTargetOutputPath() {
         targetOutputPath = executionPath;
         if (this.outputPath != null) {
