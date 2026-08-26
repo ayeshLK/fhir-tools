@@ -93,6 +93,26 @@ public final class SpecificationPathUtils {
         return containsOnlyHl7BaseStructureDefinitions(specPath);
     }
 
+    /**
+     * Reads the {@code version} field from {@code directory/package.json} (the FHIR NPM package manifest),
+     * or {@code null} when the manifest or its version field is missing/unreadable.
+     */
+    public static String readInstalledPackageVersion(Path directory) {
+        Path packageJson = directory.resolve("package.json");
+        if (!Files.isRegularFile(packageJson)) {
+            return null;
+        }
+        try {
+            JsonObject json = JsonParser.parseString(Files.readString(packageJson)).getAsJsonObject();
+            if (!json.has("version") || json.get("version").getAsString().trim().isEmpty()) {
+                return null;
+            }
+            return json.get("version").getAsString().trim();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     public static boolean containsStructureDefinitionResources(Path directory) throws BallerinaHealthException {
         try {
             if (!Files.isDirectory(directory)) {

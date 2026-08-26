@@ -118,6 +118,37 @@ class FhirIgPackageDownloaderTest {
     }
 
     @Test
+    void downloadAndExtractRefetchesWhenInstalledVersionDiffers() throws Exception {
+        Path target = tempDir.resolve("stale-ig");
+        Files.createDirectories(target);
+        Files.writeString(target.resolve("package.json"), "{\"name\":\"hl7.fhir.us.core\",\"version\":\"6.1.0\"}");
+        Files.writeString(target.resolve("StructureDefinition-Patient.json"), """
+                {
+                  "resourceType": "StructureDefinition",
+                  "url": "http://hl7.org/fhir/StructureDefinition/Patient",
+                  "name": "StalePatient"
+                }
+                """);
+
+        Path cacheDir = tempDir.resolve("mismatch-cache");
+        Files.createDirectories(cacheDir);
+        Files.write(cacheDir.resolve("hl7.fhir.us.core-9.0.0.tgz"), buildSamplePackageTgz());
+
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        FhirIgPackageDownloader.DownloadOptions options = new FhirIgPackageDownloader.DownloadOptions(
+                "https://packages.fhir.org", cacheDir.toString(), 60, false, false, false, true,
+                new PrintStream(buffer));
+
+        Path result = FhirIgPackageDownloader.downloadAndExtract(target, "hl7.fhir.us.core", "9.0.0", options);
+
+        assertEquals(target, result);
+        String content = Files.readString(target.resolve("StructureDefinition-Patient.json"));
+        assertTrue(content.contains("\"name\": \"Patient\""));
+        assertTrue(!content.contains("StalePatient"));
+        assertTrue(buffer.toString(StandardCharsets.UTF_8).contains("[WARN] Replacing existing IG definitions"));
+    }
+
+    @Test
     void parseIgReferenceSplitsNameAndVersion() {
         FhirIgPackageDownloader.ParsedIgSpec spec =
                 FhirIgPackageDownloader.parseIgReference("hl7.fhir.us.core@8.0.1");

@@ -153,6 +153,16 @@ public final class FhirIgPackageDownloader {
         return new ParsedIgSpec(spec.name(), resolvedVersion);
     }
 
+    /**
+     * True when {@code targetDirectory} already has an extracted IG whose {@code package.json} version differs
+     * from {@code requestedVersion}. A directory with no readable version is assumed to already match, so a
+     * plain user-supplied local spec directory (no package.json) is never treated as stale.
+     */
+    private static boolean isVersionMismatch(Path targetDirectory, String requestedVersion) {
+        String installedVersion = SpecificationPathUtils.readInstalledPackageVersion(targetDirectory);
+        return installedVersion != null && !installedVersion.equals(requestedVersion);
+    }
+
     private static boolean needsVersionResolution(String requestedVersion) {
         return requestedVersion == null || requestedVersion.trim().isEmpty()
                 || VERSION_LATEST_TAG.equalsIgnoreCase(requestedVersion.trim());
@@ -171,13 +181,20 @@ public final class FhirIgPackageDownloader {
      */
     public static Path downloadAndExtract(Path targetDirectory, ParsedIgSpec spec, DownloadOptions options)
             throws BallerinaHealthException {
-        if (!options.forceDownload()
-                && SpecificationPathUtils.containsStructureDefinitionResources(targetDirectory)) {
+        boolean alreadyPresent = SpecificationPathUtils.containsStructureDefinitionResources(targetDirectory);
+        boolean versionMismatch = alreadyPresent && isVersionMismatch(targetDirectory, spec.version());
+        if (!options.forceDownload() && alreadyPresent && !versionMismatch) {
             return targetDirectory;
         }
 
+        if (versionMismatch) {
+            PrintStream out = options.printStream() != null ? options.printStream() : System.out;
+            out.println(HealthCmdConstants.PrintStrings.IG_VERSION_MISMATCH_WARNING + targetDirectory
+                    + " — installed version doesn't match the requested " + spec.version() + ".");
+        }
+
         try {
-            if (options.forceDownload() && Files.exists(targetDirectory)) {
+            if ((options.forceDownload() || versionMismatch) && Files.exists(targetDirectory)) {
                 deleteDirectoryContents(targetDirectory);
             }
             Files.createDirectories(targetDirectory);

@@ -133,6 +133,7 @@ public class HealthCmdConstants {
         public static final String IG_CACHE_MISS_WARNING = "[WARN] Expected cached IG package not found: ";
         public static final String IG_CACHE_GITIGNORE_WARNING = "[WARN] Add the IG cache directory to your "
                 + ".gitignore if it isn't already ignored: ";
+        public static final String IG_VERSION_MISMATCH_WARNING = "[WARN] Replacing existing IG definitions at ";
 
     }
 
