@@ -4,11 +4,11 @@ NAME
 
 SYNOPSIS
         bal health fhir [-m | --mode] package --package-name <package-name> \
-                        [--ig-name <registry-package-id>] [--ig-version <version>] \
+                        [--ig <name>[@<version>]] \
                         [-o <output>] [<FHIR-specification-directory-path>]
 
         bal health fhir [-m | --mode] template \
-                        [--ig-name <registry-package-id>] [--ig-version <version>] \
+                        [--ig <name>[@<version>]] \
                         [--dependent-package <qualified-ballerina-package-name>] \
                         [--aggregate <true|false>] [-o <output>] \
                         [<FHIR-specification-directory-path>]
@@ -26,9 +26,9 @@ DESCRIPTION
 
         FHIR specification files can be provided as a local directory path (last
         positional argument), or downloaded automatically from the FHIR package
-        registry (https://packages.fhir.org) using --ig-name and --ig-version.
-        The specification path is optional when --ig-name is set, or in template
-        mode when the default HL7 R4 core IG should be used.
+        registry (https://packages.fhir.org) using --ig <name>[@<version>], e.g.
+        --ig hl7.fhir.us.core@8.0.1. The specification path is optional when --ig
+        is set, or in template mode when the default HL7 R4 core IG should be used.
 
         Template mode defaults:
             - A single aggregated FHIR API under fhir-service/ (--aggregate
@@ -38,13 +38,14 @@ DESCRIPTION
               --ig-module-name is set). Pass --dependent-package to import a
               published package instead and skip local IG module generation.
 
-        When no path or --ig-name is given in template mode, the tool downloads
+        When no path or --ig is given in template mode, the tool downloads
         hl7.fhir.r4.core into spec/international and imports the published
         ballerinax/health.fhir.r4.international401 package (no local IG module).
 
-        When --ig-version is omitted for a registry download, the CLI lists
-        published versions interactively (TTY). Use --non-interactive in CI or
-        scripts to select dist-tags.latest automatically.
+        When the version is omitted from --ig (e.g. --ig hl7.fhir.us.core), the
+        CLI lists published versions interactively when run from a terminal, or
+        automatically selects dist-tags.latest when run non-interactively (CI,
+        scripts, or any environment without a TTY).
 
         You can also obtain FHIR specification files from the respective
         Implementation Guide's official website. (Published list of
@@ -98,20 +99,15 @@ COMMANDS
                         a prefix on generated template imports. When omitted,
                         profile types are embedded under fhir-service/modules/.
 
-                    --ig-name <registry-package-id>
-                        FHIR package registry id (e.g. hl7.fhir.us.core).
-                        Downloads from packages.fhir.org into spec/<ig-name>
-                        when no local specification path is provided. Works in
-                        both 'package' and 'template' modes.
-
-                    --ig-version <version>
-                        Registry package version (e.g. 6.1.0 or 9.0.0). If
-                        omitted, an interactive list of published versions is
-                        shown (TTY). Use --non-interactive for dist-tags.latest.
-
-                    --non-interactive
-                        When --ig-version is omitted, use dist-tags.latest from
-                        registry metadata without prompting (for CI and scripts).
+                    --ig <name>[@<version>]
+                        FHIR registry package reference, npm-style (e.g.
+                        hl7.fhir.us.core@8.0.1, or bare hl7.fhir.us.core for the
+                        latest version). Downloads from packages.fhir.org into
+                        spec/<name> when no local specification path is
+                        provided. Works in both 'package' and 'template' modes.
+                        When the version is omitted, an interactive list of
+                        published versions is shown when run from a terminal;
+                        otherwise dist-tags.latest is selected automatically.
 
                     --registry-url <url>
                         FHIR package registry base URL (default:
@@ -119,7 +115,12 @@ COMMANDS
 
                     --ig-cache-dir <path>
                         Directory for cached .tgz downloads (default:
-                        .fhir-ig-cache under the working directory).
+                        .fhir-ig-cache under the working directory). If a
+                        package is already downloaded, place it here as
+                        <name>-<version>.tgz to skip the network fetch. When
+                        this flag is explicitly set and the expected archive
+                        isn't found, a warning is printed before falling back
+                        to a registry download.
 
                     --force-ig-download
                         Re-download and re-extract the IG even if definitions
@@ -193,22 +194,23 @@ COMMANDS
 
                     Generate templates from US Core via the registry (embedded IG
                     module, aggregated service; pick version interactively).
-                        $ bal health fhir -m template --ig-name hl7.fhir.us.core \
+                        $ bal health fhir -m template --ig hl7.fhir.us.core \
                         -o ./generated-template
 
-                    Pin a US Core registry version (non-interactive CI example).
-                        $ bal health fhir -m template --ig-name hl7.fhir.us.core \
-                        --ig-version 9.0.0 --non-interactive -o ./generated-template
+                    Pin a US Core registry version (non-interactive CI example;
+                    dist-tags.latest is used automatically outside a terminal).
+                        $ bal health fhir -m template --ig hl7.fhir.us.core@9.0.0 \
+                        -o ./generated-template
 
                     Generate templates using a published US Core package instead
                     of an embedded local module.
                         $ bal health fhir -m template \
                         --dependent-package ballerinax/health.fhir.r4.uscore501 \
-                        --ig-name hl7.fhir.us.core --ig-version 6.1.0 \
+                        --ig hl7.fhir.us.core@6.1.0 \
                         -o ./generated-template
 
                     Generate separate services per FHIR resource.
-                        $ bal health fhir -m template --ig-name hl7.fhir.us.core \
+                        $ bal health fhir -m template --ig hl7.fhir.us.core \
                         --aggregate false -o ./generated-template
 
                     Generate a Ballerina package from local US Core definitions.
@@ -217,8 +219,8 @@ COMMANDS
 
                     Generate a package from US Core via the FHIR package registry.
                         $ bal health fhir -m package --package-name uscore501 \
-                        --org-name ballerinax --ig-name hl7.fhir.us.core \
-                        --ig-version 6.1.0 -o ./output
+                        --org-name ballerinax --ig hl7.fhir.us.core@6.1.0 \
+                        -o ./output
 
                     Generate templates from local US Core definitions (embedded
                     IG module by default).

@@ -24,6 +24,7 @@ import org.junit.jupiter.api.io.TempDir;
 
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -105,7 +106,8 @@ class FhirIgPackageDownloaderTest {
     @Test
     void resolvePackageVersionKeepsExplicitVersion() throws Exception {
         FhirIgPackageDownloader.DownloadOptions options = new FhirIgPackageDownloader.DownloadOptions(
-                "https://packages.fhir.org", tempDir.resolve("cache").toString(), 60, false, true, null);
+                "https://packages.fhir.org", tempDir.resolve("cache").toString(), 60, false, true, false, true,
+                null);
         assertEquals("6.1.0", FhirIgPackageDownloader.resolvePackageVersion(
                 "https://packages.fhir.org", "hl7.fhir.us.core", "6.1.0", options));
     }
@@ -113,6 +115,62 @@ class FhirIgPackageDownloaderTest {
     @Test
     void sanitizeIgDirectoryName() {
         assertEquals("hl7_fhir_us_core", FhirIgPackageDownloader.sanitizeIgDirectoryName("hl7.fhir.us.core"));
+    }
+
+    @Test
+    void parseIgReferenceSplitsNameAndVersion() {
+        FhirIgPackageDownloader.ParsedIgSpec spec =
+                FhirIgPackageDownloader.parseIgReference("hl7.fhir.us.core@8.0.1");
+        assertEquals("hl7.fhir.us.core", spec.name());
+        assertEquals("8.0.1", spec.version());
+    }
+
+    @Test
+    void parseIgReferenceWithoutVersionUsesLatestSentinel() {
+        FhirIgPackageDownloader.ParsedIgSpec spec =
+                FhirIgPackageDownloader.parseIgReference("hl7.fhir.us.core");
+        assertEquals("hl7.fhir.us.core", spec.name());
+        assertEquals("latest", spec.version());
+    }
+
+    @Test
+    void parseIgReferenceSplitsOnLastAtSign() {
+        FhirIgPackageDownloader.ParsedIgSpec spec = FhirIgPackageDownloader.parseIgReference("foo@bar@1.0.0");
+        assertEquals("foo@bar", spec.name());
+        assertEquals("1.0.0", spec.version());
+    }
+
+    @Test
+    void isValidIgReferenceRejectsMissingName() {
+        assertTrue(!FhirIgPackageDownloader.isValidIgReference("@8.0.1"));
+        assertTrue(!FhirIgPackageDownloader.isValidIgReference(""));
+        assertTrue(!FhirIgPackageDownloader.isValidIgReference(null));
+    }
+
+    @Test
+    void isValidIgReferenceAcceptsBareNameOrNameAtVersion() {
+        assertTrue(FhirIgPackageDownloader.isValidIgReference("hl7.fhir.us.core"));
+        assertTrue(FhirIgPackageDownloader.isValidIgReference("hl7.fhir.us.core@8.0.1"));
+    }
+
+    @Test
+    void fetchesFromCacheWithoutNetworkOrWarningWhenPreSeeded() throws Exception {
+        byte[] tgz = buildSamplePackageTgz();
+        Path cacheDir = tempDir.resolve("cache");
+        Files.createDirectories(cacheDir);
+        Files.write(cacheDir.resolve("hl7.fhir.r4.core-4.0.1.tgz"), tgz);
+
+        ByteArrayOutputStream buffer = new ByteArrayOutputStream();
+        FhirIgPackageDownloader.DownloadOptions options = new FhirIgPackageDownloader.DownloadOptions(
+                "https://packages.fhir.org", cacheDir.toString(), 60, false, false, true, true,
+                new PrintStream(buffer));
+
+        Path target = tempDir.resolve("extracted-from-cache");
+        Path result = FhirIgPackageDownloader.downloadAndExtract(target, "hl7.fhir.r4.core", "4.0.1", options);
+
+        assertEquals(target, result);
+        assertTrue(Files.exists(target.resolve("StructureDefinition-Patient.json")));
+        assertEquals(0, buffer.size(), "pre-seeded cache hit should need no network call and print no warning");
     }
 
     private static byte[] buildSamplePackageTgz() throws IOException {

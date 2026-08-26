@@ -42,6 +42,7 @@ import java.util.Map;
 import java.util.logging.LogManager;
 
 import io.ballerina.health.cmd.core.config.IgRegistryConfig;
+import io.ballerina.health.cmd.core.utils.FhirIgPackageDownloader;
 import io.ballerina.health.cmd.core.utils.IgModuleNameUtils;
 import io.ballerina.health.cmd.core.utils.IgRegistryConfigLoader;
 import io.ballerina.health.cmd.core.utils.SpecificationPathResolver;
@@ -107,14 +108,8 @@ public class FhirSubCmd implements BLauncherCmd {
     @CommandLine.Option(names = "--minimal", description = "Enable minimal generation mode to skip .choreo folder, OAS files, .gitignore, and Ballerina.toml. Only generates core service files")
     private boolean minimal;
 
-    @CommandLine.Option(names = "--ig-name", description = "FHIR registry package id (e.g. hl7.fhir.us.core). Downloads from packages.fhir.org when no local spec path is given")
-    private String igName;
-
-    @CommandLine.Option(names = "--ig-version", description = "FHIR registry package version (e.g. 6.1.0). If omitted, interactively selects from published versions (or dist-tags.latest with --non-interactive)")
-    private String igVersion;
-
-    @CommandLine.Option(names = "--non-interactive", description = "Skip interactive IG version selection; use dist-tags.latest when --ig-version is omitted")
-    private boolean nonInteractive;
+    @CommandLine.Option(names = "--ig", description = "FHIR registry package reference as <name>[@version] (npm-style), e.g. hl7.fhir.us.core@8.0.1. Downloads from the registry when no local spec path is given. When the version is omitted, the CLI interactively lists published versions (or picks dist-tags.latest when run non-interactively)")
+    private String ig;
 
     @CommandLine.Option(names = "--registry-url", description = "FHIR package registry base URL (default: https://packages.fhir.org)")
     private String registryUrl;
@@ -171,8 +166,13 @@ public class FhirSubCmd implements BLauncherCmd {
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
             HealthCmdUtils.exitError(exitWhenFinish);
         }
+        if (ig != null && !ig.trim().isEmpty() && !FhirIgPackageDownloader.isValidIgReference(ig)) {
+            printStream.println(HealthCmdConstants.PrintStrings.IG_REFERENCE_INVALID);
+            printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
+            HealthCmdUtils.exitError(exitWhenFinish);
+        }
         if (CMD_MODE_PACKAGE.equals(mode) && (argList == null || argList.isEmpty())
-                && (igName == null || igName.isEmpty()) && !canResolveSpecificationFromRegistry()) {
+                && (igName() == null || igName().isEmpty()) && !canResolveSpecificationFromRegistry()) {
             printStream.println(HealthCmdConstants.PrintStrings.SPEC_PATH_REQUIRED);
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
             HealthCmdUtils.exitError(exitWhenFinish);
@@ -191,7 +191,7 @@ public class FhirSubCmd implements BLauncherCmd {
         }
         if (CMD_MODE_TEMPLATE.equals(mode) &&
                 (dependentPackage == null || dependentPackage.isEmpty()) &&
-                (igName == null || igName.isEmpty()) &&
+                (igName() == null || igName().isEmpty()) &&
                 !canResolveSpecificationFromRegistry()) {
             printStream.println(HealthCmdConstants.PrintStrings.DEPENDENT_REQUIRED);
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
@@ -278,12 +278,12 @@ public class FhirSubCmd implements BLauncherCmd {
                                 mode,
                                 executionPath.toString(),
                                 specPathArg,
-                                igName,
-                                igVersion,
+                                igName(),
+                                igVersion(),
                                 registryUrl,
                                 igCacheDir,
                                 forceIgDownload,
-                                nonInteractive,
+                                false,
                                 null,
                                 registryConfig,
                                 printStream
@@ -328,11 +328,8 @@ public class FhirSubCmd implements BLauncherCmd {
         return toolHandler.execute(specificationPath.toString(), targetOutputPath.toString());
     }
 
-    /**
-     * This util is to get the output Path.
-     */
     private boolean canResolveSpecificationFromRegistry() {
-        if (igName != null && !igName.isEmpty()) {
+        if (igName() != null && !igName().isEmpty()) {
             return true;
         }
         if (argList != null && !argList.isEmpty()) {
@@ -343,17 +340,37 @@ public class FhirSubCmd implements BLauncherCmd {
                         mode,
                         executionPath.toString(),
                         null,
-                        igName,
-                        igVersion,
+                        igName(),
+                        igVersion(),
                         registryUrl,
                         igCacheDir,
                         forceIgDownload,
-                        nonInteractive,
+                        false,
                         null,
                         IgRegistryConfigLoader.load(),
                         printStream
                 ));
     }
+
+    /**
+     * Package name component of --ig (before the last '@'), or null when --ig isn't set.
+     */
+    private String igName() {
+        return (ig == null || ig.trim().isEmpty()) ? null
+                : FhirIgPackageDownloader.parseIgReference(ig).name();
+    }
+
+    /**
+     * Version component of --ig (after the last '@'), or null when --ig isn't set.
+     */
+    private String igVersion() {
+        return (ig == null || ig.trim().isEmpty()) ? null
+                : FhirIgPackageDownloader.parseIgReference(ig).version();
+    }
+
+    /**
+     * This util is to get the output Path.
+     */
 
     private void getTargetOutputPath() {
         targetOutputPath = executionPath;

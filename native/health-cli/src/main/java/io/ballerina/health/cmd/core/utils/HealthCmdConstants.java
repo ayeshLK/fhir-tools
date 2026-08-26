@@ -46,8 +46,7 @@ public class HealthCmdConstants {
     public static final String CMD_DEFAULT_R4_IG_PACKAGE_VERSION = "4.0.1";
     public static final String CMD_DEFAULT_R5_IG_PACKAGE_NAME = "hl7.fhir.r5.core";
     public static final String CMD_DEFAULT_R5_IG_PACKAGE_VERSION = "5.0.0";
-    public static final String CMD_OPTION_IG_NAME = "--ig-name";
-    public static final String CMD_OPTION_IG_VERSION = "--ig-version";
+    public static final String CMD_OPTION_IG = "--ig";
     public static final String CMD_OPTION_REGISTRY_URL = "--registry-url";
     public static final String CMD_OPTION_IG_CACHE_DIR = "--ig-cache-dir";
     public static final String CMD_OPTION_FORCE_IG_DOWNLOAD = "--force-ig-download";
@@ -118,17 +117,22 @@ public class HealthCmdConstants {
         public static final String PKG_NAME_REQUIRED = "[ERROR] Package name [--package-name] is required for package "
                 + "generation.";
         public static final String GEN_ERROR = "[ERROR] Error occurred while generating the Ballerina artifacts.";
-        public static final String DEPENDENT_REQUIRED = "[ERROR] --dependent-package, --ig-name, or a resolvable spec "
+        public static final String DEPENDENT_REQUIRED = "[ERROR] --dependent-package, --ig, or a resolvable spec "
                 + "path (local or registry download) is required for template generation.";
         public static final String IG_DOWNLOAD_SUCCESS = "[INFO] Downloaded IG package ";
-        public static final String SPEC_PATH_REQUIRED = "[ERROR] FHIR specification path or --ig-name is required.";
+        public static final String SPEC_PATH_REQUIRED = "[ERROR] FHIR specification path or --ig is required.";
         public static final String USING_INTERNATIONAL_BASE = "[INFO] No custom IG specified. Using international "
                 + "base FHIR structure definitions with ";
         public static final String DEPENDENT_INCORRECT = "[ERROR] Format of the dependent package is incorrect.";
+        public static final String IG_REFERENCE_INVALID = "[ERROR] Invalid --ig value. Expected <name>[@version], "
+                + "e.g. hl7.fhir.us.core@8.0.1.";
         public static final String INCLUDED_EXCLUDED_TOGETHER = "[ERROR] Both --included-profile and "
                 + "--excluded-profile cannot be used together.";
         public static final String CDS_HOOKS_VALIDATION = "[ERROR] CDS hooks validation failed!";
         public static final String INVALID_CONFIG_PATH = "[ERROR] Cannot find the configuration file provided for the input[-i] path argument.";
+        public static final String IG_CACHE_MISS_WARNING = "[WARN] Expected cached IG package not found: ";
+        public static final String IG_CACHE_GITIGNORE_WARNING = "[WARN] Add the IG cache directory to your "
+                + ".gitignore if it isn't already ignored: ";
 
     }
 

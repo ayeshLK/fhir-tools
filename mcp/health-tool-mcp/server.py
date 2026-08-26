@@ -460,18 +460,18 @@ _check_bal_at_startup()
 
 def _append_registry_ig_args(cmd: list, ig_name: Optional[str], ig_version: Optional[str]) -> None:
     if ig_name and ig_name.strip():
-        cmd.extend(["--ig-name", ig_name.strip()])
-    if ig_version and ig_version.strip():
-        cmd.extend(["--ig-version", ig_version.strip()])
+        name = ig_name.strip()
+        version = ig_version.strip() if ig_version and ig_version.strip() else None
+        cmd.extend(["--ig", f"{name}@{version}" if version else name])
 
 
 @mcp.tool(
-    description="Generate a Ballerina package from FHIR IG definitions. Provide a local definitions path under spec/<ig_name>, or use --ig-name/--ig-version to download from packages.fhir.org (e.g. hl7.fhir.us.core@6.1.0). Command: bal health fhir -m package --package-name <name> [--ig-name <id> --ig-version <ver>] -o <output> [<definitions_path>]"
+    description="Generate a Ballerina package from FHIR IG definitions. Provide a local definitions path under spec/<ig_name>, or use ig_name/ig_version to download from packages.fhir.org (e.g. hl7.fhir.us.core@6.1.0). Command: bal health fhir -m package --package-name <name> [--ig <id>[@<version>]] -o <output> [<definitions_path>]"
 )
 def fhirPackageGeneration(
-    fhir_spec_directory: Annotated[Optional[str], "Optional: Absolute path to FHIR IG definitions under spec/<ig_name>. Omit when using --ig-name to download from the registry."] = None,
+    fhir_spec_directory: Annotated[Optional[str], "Optional: Absolute path to FHIR IG definitions under spec/<ig_name>. Omit when using ig_name to download from the registry."] = None,
     ig_name: Annotated[Optional[str], "Optional: FHIR registry package id (e.g. hl7.fhir.us.core). Downloads from packages.fhir.org when no local path is given."] = None,
-    ig_version: Annotated[Optional[str], "Optional: FHIR registry package version (e.g. 6.1.0). If omitted, bal health prompts interactively in a TTY; use --non-interactive in scripts for latest."] = None,
+    ig_version: Annotated[Optional[str], "Optional: FHIR registry package version (e.g. 6.1.0). If omitted, bal health prompts interactively in a TTY, or automatically selects the latest version when run non-interactively (e.g. from this MCP server)."] = None,
     package_name: Annotated[Optional[str], "Optional: Name for the generated Ballerina package. If omitted, inferred from IG name."] = None,
     working_directory: Annotated[Optional[str], "Optional: Project directory. Auto-detected from path if not provided."] = None,
     org_name: Annotated[Optional[str], "Optional: Organization name"] = None,
@@ -778,13 +778,13 @@ def fhirPackageGeneration(
         )
 
 @mcp.tool(
-    description="Generate FHIR API templates from a FHIR Implementation Guide. Use a local definitions path, --ig-name/--ig-version to download from packages.fhir.org, or omit both to use default hl7.fhir.r4.core. Command: bal health fhir -m template [--dependent-package <pkg>] [--ig-name <id> --ig-version <ver>] -o <output> [<definitions_path>]"
+    description="Generate FHIR API templates from a FHIR Implementation Guide. Use a local definitions path, ig_name/ig_version to download from packages.fhir.org, or omit both to use default hl7.fhir.r4.core. Command: bal health fhir -m template [--dependent-package <pkg>] [--ig <id>[@<version>]] -o <output> [<definitions_path>]"
 )
 def fhirTemplateGeneration(
     dependent_package: Annotated[Optional[str], "Optional: Ballerina package (e.g. ballerinax/health.fhir.r4.uscore501). Inferred for known IGs or default R4 core."] = None,
     fhir_spec_directory: Annotated[Optional[str], "Optional: Absolute path to FHIR IG definitions. Omit to download via ig_name or default hl7.fhir.r4.core."] = None,
     ig_name: Annotated[Optional[str], "Optional: FHIR registry package id (e.g. hl7.fhir.us.core)."] = None,
-    ig_version: Annotated[Optional[str], "Optional: FHIR registry package version (e.g. 6.1.0). If omitted, bal health prompts interactively in a TTY; use --non-interactive in scripts for latest."] = None,
+    ig_version: Annotated[Optional[str], "Optional: FHIR registry package version (e.g. 6.1.0). If omitted, bal health prompts interactively in a TTY, or automatically selects the latest version when run non-interactively (e.g. from this MCP server)."] = None,
     working_directory: Annotated[Optional[str], "Optional: Project directory. Auto-detected from path if not provided."] = None,
     org_name: Annotated[Optional[str], "Optional: Organization name for generated templates"] = None,
     included_profiles: Annotated[Optional[list[str]], "Optional: FHIR profile URLs to ONLY include. Reduces generation time by skipping unwanted profiles."] = None,

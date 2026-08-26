@@ -38,6 +38,10 @@ public final class SpecificationPathResolver {
                 ? request.registryConfig() : IgRegistryConfig.defaults();
 
         String cacheDir = resolveCacheDir(request.cacheDir(), request.executionPath(), registryConfig.getCacheDir());
+        boolean cacheDirExplicit = request.cacheDir() != null && !request.cacheDir().trim().isEmpty();
+        // resolveCacheDir() always returns an absolute path (it's joined against the absolute execution path),
+        // so "relative to the project" has to be judged from the raw --ig-cache-dir override, before resolution.
+        boolean cacheDirRelativeToProject = !cacheDirExplicit || !Paths.get(request.cacheDir().trim()).isAbsolute();
         PrintStream out = request.printStream() != null ? request.printStream() : System.out;
         FhirIgPackageDownloader.DownloadOptions downloadOptions = new FhirIgPackageDownloader.DownloadOptions(
                 request.registryUrl() != null ? request.registryUrl() : registryConfig.getRegistryUrl(),
@@ -45,6 +49,8 @@ public final class SpecificationPathResolver {
                 registryConfig.getHttpTimeoutSeconds(),
                 request.forceDownload(),
                 request.nonInteractive(),
+                cacheDirExplicit,
+                cacheDirRelativeToProject,
                 out
         );
 

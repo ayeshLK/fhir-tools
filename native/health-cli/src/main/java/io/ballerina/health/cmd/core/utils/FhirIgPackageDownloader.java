@@ -64,6 +64,34 @@ public final class FhirIgPackageDownloader {
         return new ParsedIgSpec(name, version);
     }
 
+    /**
+     * Parses an npm-style IG reference ({@code <name>[@version]}, e.g. {@code hl7.fhir.us.core@8.0.1}) as accepted
+     * by the {@code --ig} option. A missing version resolves to {@code latest}.
+     */
+    public static ParsedIgSpec parseIgReference(String igReference) {
+        if (igReference == null || igReference.trim().isEmpty()) {
+            throw new IllegalArgumentException("IG reference cannot be empty");
+        }
+        String trimmed = igReference.trim();
+        int at = trimmed.lastIndexOf('@');
+        String name = at >= 0 ? trimmed.substring(0, at) : trimmed;
+        String version = at >= 0 ? trimmed.substring(at + 1) : null;
+        return parseIgSpec(name, version);
+    }
+
+    /**
+     * Returns {@code true} when {@code igReference} has a non-empty name component before the last {@code @}.
+     */
+    public static boolean isValidIgReference(String igReference) {
+        if (igReference == null || igReference.trim().isEmpty()) {
+            return false;
+        }
+        String trimmed = igReference.trim();
+        int at = trimmed.lastIndexOf('@');
+        String name = at >= 0 ? trimmed.substring(0, at) : trimmed;
+        return !name.trim().isEmpty();
+    }
+
     public static String fetchPackageMetadata(String registryUrl, String packageName, int timeoutSeconds)
             throws BallerinaHealthException {
         String registryBase = registryUrl.replaceAll("/+$", "");
@@ -202,6 +230,12 @@ public final class FhirIgPackageDownloader {
             }
         }
 
+        PrintStream out = options.printStream() != null ? options.printStream() : System.out;
+        if (options.cacheDirExplicit() && cachePath != null) {
+            out.println(HealthCmdConstants.PrintStrings.IG_CACHE_MISS_WARNING + cachePath
+                    + ". Downloading from the registry instead.");
+        }
+
         String registryUrl = options.registryUrl().replaceAll("/+$", "");
         String url = registryUrl + "/" + spec.name() + "/" + spec.version();
         byte[] data = httpGet(url, options.httpTimeoutSeconds());
@@ -210,6 +244,10 @@ public final class FhirIgPackageDownloader {
             try {
                 Files.createDirectories(cachePath.getParent());
                 Files.write(cachePath, data);
+                if (options.cacheDirRelativeToProject()) {
+                    out.println(HealthCmdConstants.PrintStrings.IG_CACHE_GITIGNORE_WARNING
+                            + options.cacheDir() + "/");
+                }
             } catch (IOException ignored) {
                 // best-effort cache write
             }
@@ -296,10 +334,12 @@ public final class FhirIgPackageDownloader {
             int httpTimeoutSeconds,
             boolean forceDownload,
             boolean nonInteractive,
+            boolean cacheDirExplicit,
+            boolean cacheDirRelativeToProject,
             PrintStream printStream
     ) {
         public DownloadOptions(String registryUrl, String cacheDir, int httpTimeoutSeconds, boolean forceDownload) {
-            this(registryUrl, cacheDir, httpTimeoutSeconds, forceDownload, false, System.out);
+            this(registryUrl, cacheDir, httpTimeoutSeconds, forceDownload, false, false, true, System.out);
         }
     }
 }
