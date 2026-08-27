@@ -133,8 +133,9 @@ public class BallerinaProjectGenerator extends AbstractFHIRTemplateGenerator {
                 projectProperties.put("igPackageImportIdentifier", getImportIdentifier(igPackage));
                 projectProperties.put("dependentPackageImportIdentifier", getImportIdentifier(dependentPackage));
 
-                // Use minimal generation flag to determine path
-                if (ballerinaProjectToolConfig.isMinimalGeneration()) {
+                // Minimal and --flat both skip the fhir-service/ nesting; minimal additionally skips
+                // Ballerina.toml, OAS, .choreo, and .gitignore generation below.
+                if (ballerinaProjectToolConfig.isMinimalGeneration() || ballerinaProjectToolConfig.isFlatOutput()) {
                     projectProperties.put("projectAPIPath", this.getTargetDir());
                 } else {
                     projectProperties.put("projectAPIPath", this.getTargetDir() + "fhir-service");
@@ -186,7 +187,8 @@ public class BallerinaProjectGenerator extends AbstractFHIRTemplateGenerator {
             return false;
         }
         if (config.isEnableAggregatedApi()) {
-            Path projectPath = config.isMinimalGeneration() ? basePath : basePath.resolve("fhir-service");
+            Path projectPath = (config.isMinimalGeneration() || config.isFlatOutput())
+                    ? basePath : basePath.resolve("fhir-service");
             return Files.exists(projectPath.resolve("service.bal"));
         }
         if (serviceMap == null || serviceMap.isEmpty()) {

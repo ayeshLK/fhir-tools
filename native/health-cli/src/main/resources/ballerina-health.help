@@ -169,6 +169,13 @@ COMMANDS
                         Generates only core service files and skips .choreo,
                         OAS, .gitignore, and Ballerina.toml.
 
+                    --flat
+                        Aggregated mode only (default --aggregate; no effect
+                        with --aggregate false). Generates directly into
+                        -o/--output instead of nesting under fhir-service/.
+                        Unlike --minimal, still generates Ballerina.toml,
+                        .gitignore, OAS, and .choreo.
+
                     -c, --config <config-file-path>
                         MANDATORY in 'connector' mode. Path to the configuration
                         JSON file including the FHIR server Capability Statement
@@ -212,6 +219,11 @@ COMMANDS
                     Generate separate services per FHIR resource.
                         $ bal health fhir -m template --ig hl7.fhir.us.core \
                         --aggregate false -o ./generated-template
+
+                    Generate the aggregated service directly into -o, without
+                    the fhir-service/ subdirectory.
+                        $ bal health fhir -m template --ig hl7.fhir.us.core \
+                        --flat -o ./generated-template
 
                     Generate a Ballerina package from local US Core definitions.
                         $ bal health fhir -m package --package-name uscore401 \

@@ -108,6 +108,9 @@ public class FhirSubCmd implements BLauncherCmd {
     @CommandLine.Option(names = "--minimal", description = "Enable minimal generation mode to skip .choreo folder, OAS files, .gitignore, and Ballerina.toml. Only generates core service files")
     private boolean minimal;
 
+    @CommandLine.Option(names = "--flat", description = "Aggregated mode only. Generate directly into -o/--output instead of nesting under fhir-service/. Keeps Ballerina.toml, .gitignore, OAS, and .choreo (unlike --minimal). No effect with --aggregate false")
+    private boolean flat;
+
     @CommandLine.Option(names = "--ig", description = "FHIR registry package reference as <name>[@version] (npm-style), e.g. hl7.fhir.us.core@8.0.1. Downloads from the registry when no local spec path is given. When the version is omitted, the CLI interactively lists published versions (or picks dist-tags.latest when run non-interactively)")
     private String ig;
 
@@ -315,6 +318,7 @@ public class FhirSubCmd implements BLauncherCmd {
         argsMap.put("--aggregate", aggregate);
         argsMap.put("--resources", resources);
         argsMap.put("--minimal", minimal);
+        argsMap.put("--flat", flat);
 
         Handler toolHandler = null;
         try {

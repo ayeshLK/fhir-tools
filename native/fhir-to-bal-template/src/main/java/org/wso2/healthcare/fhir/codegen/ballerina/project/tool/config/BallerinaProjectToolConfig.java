@@ -53,6 +53,7 @@ public class BallerinaProjectToolConfig extends AbstractToolConfig {
     private boolean enableAggregatedApi;
     private List<String> aggregatedApis;
     private boolean minimalGeneration;
+    private boolean flatOutput;
     private boolean generateIgModuleEnabled;
     private String generateIgModuleName;
     private String generateIgModuleSourceDir;
@@ -133,6 +134,9 @@ public class BallerinaProjectToolConfig extends AbstractToolConfig {
                 break;
             case "project.minimalGeneration":
                 this.minimalGeneration = value.getAsBoolean();
+                break;
+            case "project.flatOutput":
+                this.flatOutput = value.getAsBoolean();
                 break;
             case "project.aggregatedApis":
                 this.aggregatedApis.clear();
@@ -257,6 +261,8 @@ public class BallerinaProjectToolConfig extends AbstractToolConfig {
     }
 
     public boolean isMinimalGeneration() { return minimalGeneration;}
+
+    public boolean isFlatOutput() { return flatOutput;}
 
     public boolean isGenerateIgModuleEnabled() {
         return generateIgModuleEnabled;

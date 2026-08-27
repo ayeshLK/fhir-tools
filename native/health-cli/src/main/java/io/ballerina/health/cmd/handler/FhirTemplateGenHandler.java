@@ -66,6 +66,7 @@ public class FhirTemplateGenHandler implements Handler {
     private boolean aggregate;
     private String resources;
     private boolean minimal;
+    private boolean flat;
 
     private JsonObject configJson;
     private PrintStream printStream;
@@ -102,6 +103,7 @@ public class FhirTemplateGenHandler implements Handler {
         Object aggregateArg = argsMap.get("--aggregate");
         this.aggregate = aggregateArg instanceof Boolean ? (Boolean) aggregateArg : true;
         this.minimal = (Boolean) argsMap.get("--minimal");
+        this.flat = Boolean.TRUE.equals(argsMap.get("--flat"));
         this.resources = (String) argsMap.get("--resources");
     }
 
@@ -200,6 +202,9 @@ public class FhirTemplateGenHandler implements Handler {
                 if (minimal) {
                     JsonElement minimalConfig = new Gson().toJsonTree(true);
                     toolConfigInstance.overrideConfig("project.minimalGeneration", minimalConfig);
+                }
+                if (flat) {
+                    toolConfigInstance.overrideConfig("project.flatOutput", new Gson().toJsonTree(true));
                 }
 
                 Object toolFactory = toolClass.getConstructor().newInstance();
