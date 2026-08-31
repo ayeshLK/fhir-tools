@@ -124,7 +124,7 @@ public class BallerinaProjectGenerator extends AbstractFHIRTemplateGenerator {
                 String basePackage = dependenciesMap.get("basePackage");
                 String servicePackage = dependenciesMap.get("servicePackage");
                 String igPackage = dependenciesMap.get("igPackage");
-                String templateName = "FHIRServerTemplate";
+                String templateName = ballerinaProjectToolConfig.getTemplatePackageName();
                 String dependentPackage = resolveDependentPackageImport(
                         ballerinaProjectToolConfig, dependenciesMap, templateName);
                 dependenciesMap.put("dependentPackage", dependentPackage);

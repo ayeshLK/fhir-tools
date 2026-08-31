@@ -10,8 +10,8 @@ SYNOPSIS
         bal health fhir [-m | --mode] template \
                         [--ig <name>[@<version>]] \
                         [--dependent-package <qualified-ballerina-package-name>] \
-                        [--aggregate <true|false>] [-o <output>] \
-                        [<FHIR-specification-directory-path>]
+                        [--aggregate <true|false>] [--package-name <name-of-package>] \
+                        [-o <output>] [<FHIR-specification-directory-path>]
 
         bal health fhir [-m | --mode] connector --config <config-file-path> \
                         -o <output>
@@ -77,8 +77,13 @@ COMMANDS
                         This is a MANDATORY input for the fhir command.
 
                     --package-name <name-of-package>
-                        Only applicable in 'package' mode. Name of the Ballerina
-                        package to be generated. MANDATORY in 'package' mode.
+                        MANDATORY in 'package' mode: name of the Ballerina
+                        package to be generated.
+                        Optional in aggregated template mode: names the
+                        generated project (Ballerina.toml and the embedded
+                        IG module's import prefix). Defaults to
+                        FHIRServerTemplate when omitted. No effect with
+                        --aggregate false.
                         Refer https://ballerina.io/learn/package-references/#the-name-field
 
                     --dependent-ig <base-url-of-the-IG>=<qualified-ballerina-package-name>

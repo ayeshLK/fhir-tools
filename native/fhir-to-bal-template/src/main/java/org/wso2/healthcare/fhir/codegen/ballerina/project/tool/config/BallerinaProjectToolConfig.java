@@ -54,6 +54,7 @@ public class BallerinaProjectToolConfig extends AbstractToolConfig {
     private List<String> aggregatedApis;
     private boolean minimalGeneration;
     private boolean flatOutput;
+    private String templatePackageName;
     private boolean generateIgModuleEnabled;
     private String generateIgModuleName;
     private String generateIgModuleSourceDir;
@@ -137,6 +138,9 @@ public class BallerinaProjectToolConfig extends AbstractToolConfig {
                 break;
             case "project.flatOutput":
                 this.flatOutput = value.getAsBoolean();
+                break;
+            case "project.package.templateName":
+                this.templatePackageName = value.getAsString();
                 break;
             case "project.aggregatedApis":
                 this.aggregatedApis.clear();
@@ -263,6 +267,15 @@ public class BallerinaProjectToolConfig extends AbstractToolConfig {
     public boolean isMinimalGeneration() { return minimalGeneration;}
 
     public boolean isFlatOutput() { return flatOutput;}
+
+    /**
+     * Aggregated-mode project name (Ballerina.toml's name, and the import prefix for an embedded IG
+     * module). Defaults to "FHIRServerTemplate" when --package-name isn't given, matching prior behavior.
+     */
+    public String getTemplatePackageName() {
+        return (templatePackageName != null && !templatePackageName.isEmpty())
+                ? templatePackageName : "FHIRServerTemplate";
+    }
 
     public boolean isGenerateIgModuleEnabled() {
         return generateIgModuleEnabled;

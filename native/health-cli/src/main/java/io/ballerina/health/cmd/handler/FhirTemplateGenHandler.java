@@ -159,6 +159,10 @@ public class FhirTemplateGenHandler implements Handler {
                     JsonElement overrideConfig = new Gson().toJsonTree(fhirVersion.toLowerCase());
                     toolConfigInstance.overrideConfig("project.fhir.default_version", overrideConfig);
                 }
+                if (packageName != null && !packageName.isEmpty()) {
+                    JsonElement overrideConfig = new Gson().toJsonTree(packageName.toLowerCase());
+                    toolConfigInstance.overrideConfig("project.package.templateName", overrideConfig);
+                }
                 if (generateIgModule) {
                     String resolvedIgModuleName = resolveIgModuleName(specificationPath);
                     String igModuleSourcePath = generateIgModuleSource(specificationPath, targetOutputPath,
