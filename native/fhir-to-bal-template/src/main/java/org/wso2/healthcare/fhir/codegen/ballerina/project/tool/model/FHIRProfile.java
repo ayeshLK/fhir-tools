@@ -21,6 +21,7 @@ package org.wso2.healthcare.fhir.codegen.ballerina.project.tool.model;
 import com.google.gson.JsonObject;
 import org.apache.commons.text.CaseUtils;
 import org.wso2.healthcare.fhir.codegen.ballerina.project.tool.config.BallerinaProjectToolConfig;
+import org.wso2.healthcare.fhir.codegen.ballerina.project.tool.config.IncludedIGConfig;
 
 import java.util.HashMap;
 import java.util.HashSet;
@@ -125,7 +126,12 @@ public class FHIRProfile<StructureDefinition> {
             this.packagePrefix = config.getGenerateIgModuleName();
             return;
         }
-        String igPackage = config.getVersionConfig().getDependentPackage();
+        // Prefer this profile's own IG's resolved package over the single tool-wide default: in a multi-IG run
+        // each IG maps to a different package, so falling back to the shared versionConfig value here would
+        // give every profile the same (wrong, for all but one IG) package prefix.
+        IncludedIGConfig igConfig = config.getIncludedIGConfigs().get(this.getIgName());
+        String igPackage = (igConfig != null && igConfig.getImportStatement() != null)
+                ? igConfig.getImportStatement() : config.getVersionConfig().getDependentPackage();
         if (igPackage.contains("/")) {
             String pkgNameWithoutOrg = igPackage.split("/")[1];
             this.packagePrefix = pkgNameWithoutOrg.substring(pkgNameWithoutOrg.lastIndexOf(".") + 1);

@@ -134,14 +134,21 @@ ballerina                      — packages health-cli + all native jars into a 
 bal health fhir -m package --package-name my.package.name -o output-dir spec-path
 bal health fhir -m package --package-name my.package.name --ig hl7.fhir.us.core@8.0.1 -o output-dir
 bal health fhir -m template --ig hl7.fhir.us.core -o output-dir
+bal health fhir -m template --ig hl7.fhir.us.carin-bb.r4@2.1.0 --ig hl7.fhir.us.davinci-pdex-plan-net@1.2.0 -o output-dir
 bal health fhir -m template -o output-dir spec-path
 bal health fhir -m connector --config configuration-file-path -o output-dir
 ```
 
 A local `spec-path` and `--ig <name>[@version]` (a registry download — see below) are alternative ways to supply
-FHIR definitions to `package`/`template` mode. A local `spec-path` must contain one subfolder per Implementation
-Guide, each holding that IG's FHIR definition JSON files (`StructureDefinition-*.json`, `ValueSet-*.json`,
-`CodeSystem-*.json`, ...). Real fixtures for this layout live under `native/health-cli/src/test/resources/profiles.*`.
+FHIR definitions to `package`/`template` mode. A local `spec-path` holds one IG's FHIR definition JSON files
+directly (`StructureDefinition-*.json`, `ValueSet-*.json`, `CodeSystem-*.json`, ...) — real fixtures live under
+`native/health-cli/src/test/resources/profiles.*` (each one flat, a single IG's files with no subfolders). Despite
+what it might look like from `.fhir-ig-cache`'s naming, a spec directory containing several *different* IGs as
+sibling subfolders is **not** something the tool or the underlying framework auto-discovers/merges on its own —
+confirmed by testing (see "Multi-IG generation" below for what actually makes cross-IG merging work: repeatable
+`--ig`, not a multi-subfolder local path).
+`--ig` is repeatable in template mode for multi-IG generation (see below); every other mode/usage takes exactly
+one.
 
 Template mode defaults to a single **aggregated** service (`--aggregate false` for one service per FHIR resource
 instead), written under `<output>/fhir-service/` unless `--flat` is passed (writes directly into `<output>` instead
@@ -173,13 +180,14 @@ why (`FhirIgPackageDownloader.isVersionMismatch()` / `SpecificationPathUtils.rea
 `--force-ig-download` always re-fetches regardless of either check.
 
 `tool-config.json`'s `fhir.igRegistry.packageMappings` can suggest a known published Ballerina package for an
-exact `<ig-name>@<version>` match, but today this is **advisory only** — it prints an `[INFO]` suggestion and
-still embeds the IG locally by default; it does not auto-apply `--dependent-package` the way the
-international-base-detection path does (which *does* silently substitute a published package). Confirmed, correct
-version-pinned mappings collected so far: `hl7.fhir.us.core@6.1.0` → `ballerinax/health.fhir.r4.uscore501`,
-`hl7.fhir.us.carin-bb.r4@2.1.0` → `ballerinax/health.fhir.r4.carinbb200` — note the package's own version-ish
-naming suffix does *not* reliably indicate the IG version it targets (`carinbb200` ↔ IG `2.1.0`, not `2.0.0`);
-don't infer a mapping from a package name alone.
+exact `<ig-name>@<version>` match. For a single `--ig` this is **advisory only** — it prints an `[INFO]` suggestion
+and still embeds the IG locally by default; it does not auto-apply `--dependent-package` the way the
+international-base-detection path does (which *does* silently substitute a published package). For 2+ `--ig`
+(multi-IG generation, below), a mapping is **required and auto-applied** for every IG — there's no other way to
+end up with a mixed set of dependent packages. See `tool-config.json` for the current confirmed, version-pinned
+mappings — note a package's own version-ish naming suffix does *not* reliably indicate the IG version it targets
+(e.g. `carinbb200` targets IG `2.1.0`, not `2.0.0`); don't infer a mapping from a package name alone, get it
+confirmed by someone who knows.
 
 ### Working in the Velocity templates (`fhir-to-bal-template/src/main/resources/template/*.vm`)
 
@@ -236,35 +244,93 @@ To revert to whichever `health` version was active before testing: `bal tool rem
 --repository=local` (not `bal tool pull <old-version>` — pulling a version that's already cached locally does
 *not* reactivate it; removing the active version falls back to the next installed one automatically).
 
-## Known limitation: no multi-IG generation
+## Multi-IG generation
 
-A real, validated requirement (confirmed against two independent hand-written services, `OrganizationService` and
-`PractitionerService`, in a real facade project) is generating a *single* resource type — e.g. `Organization` or
-`Practitioner` — whose profiles come from **two different IGs** (e.g. CARIN BB's `C4BBOrganization` and Da Vinci
-PDex Plan-Net's `PlannetOrganization`/`PlannetNetwork`), dispatched by `_profile` exactly like the multi-profile
-case above. **This is not possible today.** Three concrete reasons, not just "no flag for it yet":
+`--ig` is repeatable in template mode: `--ig hl7.fhir.us.carin-bb.r4@2.1.0 --ig hl7.fhir.us.davinci-pdex-plan-net@1.2.0`
+merges profiles from both IGs for the *same* resource type onto one service, dispatched by `_profile` — e.g.
+`Organization` ends up as `carinbb200:C4BBOrganization|davinciplannet120:PlannetOrganization`, each profile pulling
+from its own correctly-imported package. This is a direct generalization of the multi-profile-within-one-IG
+mechanism above (`addResourceProfile()`/`hasMultipleProfiles()`), not a new mechanism — verified end-to-end
+(`bal build` succeeds) against the real motivating case (CARIN BB + Da Vinci PDex Plan-Net `Organization`/
+`Practitioner`, matching a real hand-written facade project's `OrganizationService`/`PractitionerService`).
 
-1. `--ig` accepts exactly one value per invocation — there is no repeatable `--ig`.
-2. Running the tool twice against the same `-o` doesn't merge — `serviceMap` (where profiles accumulate per
-   resource type, see above) is rebuilt from scratch in-memory every invocation and never persisted, so a second
-   run would overwrite the first run's `Organization`/`Practitioner` output, not add to it.
-3. `IncludedIGConfig` is always keyed to the literal constant `"FHIR"` (see `FhirTemplateGenHandler`'s
-   `populateIGConfig()`/`HealthCmdConstants.CMD_DEFAULT_IG_NAME`), not the real IG name — the plumbing between the
-   CLI and the codegen engine is single-IG-shaped end to end, even though `BallerinaProjectToolConfig` itself has
-   an unused `populateIgConfigs(JsonArray)` path reading a static `"includedIGs"` array that was clearly built
-   with multiple IGs in mind.
+**Constraints:**
+- Multi-IG (2+ `--ig` values) only works in template mode.
+- Every IG in a multi-IG run must have a `packageMappings` entry (`tool-config.json`) — unlike single-IG, where a
+  mapping is advisory-only, multi-IG **auto-applies** it per IG (there is no other way to end up with a mixed set
+  of dependent packages). No mapping for one of the IGs → a clear error at resolve time, not a silent embed.
+  There's no "embed one unmapped IG locally while the others use published packages" support — an IG without a
+  mapping fails the whole run.
+- `--dependent-package` (a single global string) is rejected when 2+ `--ig` are given — it can't apply per IG.
+- Not validated: mixing FHIR versions (an r4 IG with an r5 IG) in one run. Nothing rejects this today.
 
-**The good part: the dispatch-skeleton generation is profile-driven, not IG-driven** — `addResourceProfile()`
-doesn't care which IG a profile came from, and the union-type-alias + per-profile `search<ProfileName>` stub +
-`match _profile` mechanism (see above) would produce the exact right shape for a merged multi-IG resource type
-*without any changes*, if only it were fed profiles from more than one IG in a single run. The missing piece is
-narrower than a redesign: make `--ig` repeatable, resolve each into its own `spec/<name>/` (existing machinery,
-no new download logic needed), and feed every resolved IG's StructureDefinitions through the same
-`addResourceProfile()` pass tagged with its real IG name instead of the `"FHIR"` constant.
+### The real root cause (found by reading the actual framework source, not guessed)
 
-This is coupled to the `packageMappings` auto-apply question directly below: without an auto-applying, accurate
-mapping, a multi-IG generation would embed *every* IG as a separate local module by default, even for IGs with a
-known-correct published package already available.
+The external `open-healthcare-codegen-tool-framework` never auto-discovers IG subfolders from a directory — a
+directory containing several IG subfolders side by side is **not** a thing the framework understands on its own.
+It only ever processes exactly the IGs explicitly given to it: `FHIRR4/R5SpecParser.parse()` iterates
+`FHIRToolConfig.getIgConfigs()` (a `Map<String, IGConfig>`, each entry an explicit `name` + `dirPath`) and calls
+`parseIG(toolConfig, igName, dirPath)` once per entry — the map key becomes the literal key under which
+`FHIRImplementationGuide` is stored in `getFhirImplementationGuides()`, independent of any file content.
+
+`health-cli`'s `Handler.initializeLib()` (the *only* thing that ever populated this for FHIR) never used that
+per-IG-config mechanism at all — it called `specParser.parseIG(fhirToolConfig, "FHIR", specificationPath)` directly,
+exactly once, hardcoded to the literal name `"FHIR"`, treating the *entire* given path as one IG's own directory.
+That's why single-IG always worked regardless of naming (nothing ever depended on the real IG name), and why
+pointing it at a directory with several real subfolders failed outright (`listFiles()` on the parent finds no
+`.json` files directly inside it, so the one "FHIR" IG's resources map stays empty → "No services found to
+generate", or "No resources found in the IG: FHIR" from the package-gen embed step) — **not** a directory-walking
+gap to fix, but a call site that needed to call `parseIG()` once per real IG instead of once with a placeholder
+name.
+
+### What changed to make it work
+
+- **`FhirSubCmd`**: `--ig` is `String[]` (repeatable); validated per element; rejects multi-IG outside template
+  mode and multi-IG combined with `--dependent-package`.
+- **`SpecificationPathResolver.resolve()`**: single `--ig` is untouched (own branch, same `spec/<name>/` leaf path
+  as before). 2+ `--ig` downloads each into its own `spec/<name>/` (same per-IG download machinery), validates
+  every one resolves via `packageMappings` (throws a clear `BallerinaHealthException` otherwise), and returns
+  their shared `spec/` parent as the specification path plus a `List<ResolvedIg>` (name, version, mapped package).
+- **`Handler`/`HandlerFactory`**: `Handler` gained a default `init(printStream, path, resolvedIgs)` overload
+  (falls back to the existing 2-arg `init` when not overridden — every handler except `FhirTemplateGenHandler`
+  behaves exactly as before). `HandlerFactory` gained a matching `createHandler(..., resolvedIgs)` overload; only
+  the `fhir:template` case passes `resolvedIgs` through.
+- **`FhirTemplateGenHandler`**: for 2+ resolved IGs, bypasses `Handler.initializeLib()`'s single hardcoded
+  `parseIG` call with `initializeMultiIgLib()`, which calls `specParser.parseIG(fhirToolConfig, resolvedIg.igName(),
+  <that IG's own spec/<name>/ dir>)` once per IG — giving the framework real per-IG identities instead of one
+  placeholder. It also builds one `IncludedIGConfig` per IG (keyed by that same real name, `importStatement` =
+  that IG's own `packageMappings`-resolved package) instead of the single `HealthCmdConstants.CMD_DEFAULT_IG_NAME`
+  ("FHIR") entry used for single-IG/local-spec-path — and skips the embed-module and international-base-default
+  logic entirely for multi-IG (neither applies once every IG already has a resolved package).
+- **`AbstractBallerinaProjectTool.populateIGs()`**: single-IG's existing behavior (rename the one IG's `igMap` key
+  and `IncludedIGConfig.importStatement` to the tool-wide `versionConfig.getNamePrefix()`-derived value) is
+  preserved byte-for-byte for exactly one `IncludedIGConfig` entry. For 2+ entries, that rename is skipped
+  entirely — each IG keeps its own real name as its `igMap` key and its own already-correct `importStatement`,
+  since collapsing them onto one shared key/value (as single-IG does) would make the second IG silently overwrite
+  the first.
+- **`FHIRProfile.setPackagePrefix()`**: looks up `config.getIncludedIGConfigs().get(this.getIgName())` first,
+  falling back to the old single global `config.getVersionConfig().getDependentPackage()` only if that profile's
+  own IG isn't found — so each profile's type-alias prefix comes from its own IG's resolved package rather than
+  always the tool-wide default. Backward-compatible for single-IG: after `populateIGs()`'s existing rename, both
+  maps land on the same key, so the lookup returns the same value the old code path computed.
+- **`ServiceGenerator`/`AggregatedServiceGenerator`**: additionally import every distinct profile-level import
+  (`profile.getImportsList()`), but **only when there are 2+ `IncludedIGConfig` entries**. This guard matters:
+  `profile.getImportsList()` is populated early (during `populateBalService()`, before embed-mode's real
+  local-module import or an explicit `--dependent-package`'s org get resolved), so for single-IG it holds a
+  stale/differently-orged value that would produce a broken or duplicate/conflicting import if surfaced — it was
+  harmless before only because nothing read it. Multi-IG's `importStatement` values are never rewritten this way
+  (previous point), so they're safe to surface unconditionally there.
+
+### Known issue found (and confirmed pre-existing, unrelated to multi-IG)
+
+Generating from a large spec in aggregated mode can hit `redeclared symbol 'search<ProfileName>'` at `bal build`
+time: the per-profile dispatch-skeleton stub functions (see "Working in the Velocity templates" above) are named
+by profile name alone, module-level, with no resource-type qualification. If two *different* resource types both
+carry a same-named profile (observed with the raw international-base R4 core spec's generic `ExampleLipidProfile`
+example profiles, reused verbatim across unrelated resources), their stub functions collide. Confirmed via
+`git stash` + rebuild that this reproduces identically on the commit before multi-IG generation was implemented —
+a pre-existing gap in the single-IG multi-profile dispatch work, not something multi-IG introduced. Not yet fixed;
+a real fix needs the stub function name qualified by resource type, not just profile name.
 
 ## `packageMappings` (`tool-config.json`'s `fhir.igRegistry.packageMappings`)
 
@@ -275,14 +341,15 @@ a mapping intended for one specific version silently matched *any* requested ver
 the `hl7.fhir.us.core` entry used to fire even when `--ig` resolved to latest/`9.0.0`, not just its intended
 `6.1.0`). Don't reintroduce a bare-name key — it would bring the same bug back.
 
-**Still advisory-only, not auto-applying.** A match prints an `[INFO]` suggestion; the IG still gets embedded
-locally by default unless the user adds `--dependent-package` themselves. Whether an exact match should instead
-**auto-apply** `--dependent-package` (the way the international-base-detection path already does silently) is an
-open decision, not yet made.
+**Still advisory-only, not auto-applying, for single-IG runs.** A match prints an `[INFO]` suggestion; the IG
+still gets embedded locally by default unless the user adds `--dependent-package` themselves. Whether an exact
+match should instead **auto-apply** `--dependent-package` for a single `--ig` (the way the international-base-
+detection path already does silently) is still an open decision, not yet made — but multi-IG generation (above)
+*does* decide this narrowly for its own case: resolution there is always auto-applied per IG (enforced — a
+multi-IG run fails outright if any IG has no mapping), since there's no other way to end up with a mixed set of
+dependent packages.
 
-Confirmed, version-pinned mappings currently in `tool-config.json`:
-`hl7.fhir.us.core@6.1.0` → `ballerinax/health.fhir.r4.uscore501`,
-`hl7.fhir.us.carin-bb.r4@2.1.0` → `ballerinax/health.fhir.r4.carinbb200`.
-A package's own version-ish naming suffix does not reliably indicate the IG version it targets — these were
-confirmed by someone who knows, not inferred from the name (`carinbb200` targets IG `2.1.0`, not `2.0.0`). Get
-confirmation before adding more; don't guess from the package name.
+See `tool-config.json` for the currently confirmed, version-pinned mappings. A package's own version-ish naming
+suffix does not reliably indicate the IG version it targets — these were confirmed by someone who knows, not
+inferred from the name (e.g. `carinbb200` targets IG `2.1.0`, not `2.0.0`). Get confirmation before adding more;
+don't guess from the package name.

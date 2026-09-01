@@ -134,6 +134,11 @@ public class HealthCmdConstants {
         public static final String IG_CACHE_GITIGNORE_WARNING = "[WARN] Add the IG cache directory to your "
                 + ".gitignore if it isn't already ignored: ";
         public static final String IG_VERSION_MISMATCH_WARNING = "[WARN] Replacing existing IG definitions at ";
+        public static final String MULTI_IG_TEMPLATE_ONLY = "[ERROR] Multiple --ig values are only supported in "
+                + "template mode (-m template).";
+        public static final String MULTI_IG_DEPENDENT_PACKAGE_CONFLICT = "[ERROR] --dependent-package cannot be "
+                + "combined with multiple --ig values; each IG's dependent package is resolved automatically via "
+                + "packageMappings.";
 
     }
 

@@ -24,6 +24,8 @@ import io.ballerina.health.cmd.core.exception.BallerinaHealthException;
 import java.io.PrintStream;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.ArrayList;
+import java.util.List;
 
 /**
  * Resolves FHIR specification directories, optionally downloading IG packages from the FHIR registry first.
@@ -54,23 +56,50 @@ public final class SpecificationPathResolver {
                 out
         );
 
-        if (request.igName() != null && !request.igName().isEmpty()) {
-            Path targetDir = Paths.get(request.executionPath(), "spec",
-                    FhirIgPackageDownloader.sanitizeIgDirectoryName(request.igName()));
-            downloadIg(request, registryConfig, request.igName(), request.igVersion(), targetDir, downloadOptions);
-            String mapped = registryConfig.resolveDependentPackage(request.igName(), request.igVersion());
-            return new ResolvedSpecification(targetDir, request.igName(), mapped);
+        if (!request.igReferences().isEmpty()) {
+            if (request.igReferences().size() == 1) {
+                // Single --ig: unchanged from before repeatable --ig support (leaf spec dir, handed to the
+                // framework as-is). Multi-IG (below) needs a different shape, so it's kept as its own branch
+                // rather than folding N=1 into the general case.
+                FhirIgPackageDownloader.ParsedIgSpec spec =
+                        FhirIgPackageDownloader.parseIgReference(request.igReferences().get(0));
+                Path targetDir = Paths.get(request.executionPath(), "spec",
+                        FhirIgPackageDownloader.sanitizeIgDirectoryName(spec.name()));
+                downloadIg(request, registryConfig, spec.name(), spec.version(), targetDir, downloadOptions);
+                String mapped = registryConfig.resolveDependentPackage(spec.name(), spec.version());
+                return new ResolvedSpecification(targetDir,
+                        List.of(new ResolvedIg(spec.name(), spec.version(), mapped)));
+            }
+
+            // Multi-IG: download each into its own spec/<name>/ (same per-IG mechanism as single --ig), and hand
+            // the framework their shared parent so it discovers all of them as sibling IGs in one pass -- mirrors
+            // the existing local spec-path convention of "one subfolder per IG".
+            Path specRoot = Paths.get(request.executionPath(), "spec");
+            List<ResolvedIg> resolvedIgs = new ArrayList<>();
+            for (String reference : request.igReferences()) {
+                FhirIgPackageDownloader.ParsedIgSpec spec = FhirIgPackageDownloader.parseIgReference(reference);
+                Path targetDir = specRoot.resolve(FhirIgPackageDownloader.sanitizeIgDirectoryName(spec.name()));
+                downloadIg(request, registryConfig, spec.name(), spec.version(), targetDir, downloadOptions);
+                String mapped = registryConfig.resolveDependentPackage(spec.name(), spec.version());
+                if (mapped == null) {
+                    throw new BallerinaHealthException("Multi-IG generation requires a known published Ballerina "
+                            + "package for every --ig (no packageMappings entry for " + spec.name() + "@"
+                            + spec.version() + "). Add one to tool-config.json, or generate this IG on its own.");
+                }
+                resolvedIgs.add(new ResolvedIg(spec.name(), spec.version(), mapped));
+            }
+            return new ResolvedSpecification(specRoot, resolvedIgs);
         }
 
         if (request.specPathArg() != null && !request.specPathArg().trim().isEmpty()) {
             if (CMD_MODE_TEMPLATE.equals(request.mode())) {
                 Path path = SpecificationPathUtils.resolveTemplateSpecificationPath(
                         request.specPathArg(), request.executionPath());
-                return new ResolvedSpecification(path, null, null);
+                return new ResolvedSpecification(path, List.of());
             }
             Path path = HealthCmdUtils.validateAndSetSpecificationPath(
                     request.specPathArg(), request.executionPath());
-            return new ResolvedSpecification(path, null, null);
+            return new ResolvedSpecification(path, List.of());
         }
 
         IgRegistryConfig.IgPackageRef defaultPkg = registryConfig.getDefaultPackage(
@@ -78,21 +107,15 @@ public final class SpecificationPathResolver {
         Path targetDir = Paths.get(request.executionPath(), "spec",
                 HealthCmdConstants.CMD_DEFAULT_INTERNATIONAL_IG_DIR);
         downloadIg(request, registryConfig, defaultPkg.name(), defaultPkg.version(), targetDir, downloadOptions);
-        String mappedDependent = defaultDependentForIgPackage(defaultPkg.name(), registryConfig, request.igName(),
-                request.igVersion());
+        String mappedDependent = defaultDependentForIgPackage(defaultPkg.name());
         if (CMD_MODE_TEMPLATE.equals(request.mode())) {
             Path path = SpecificationPathUtils.resolveTemplateSpecificationPath(null, request.executionPath());
-            return new ResolvedSpecification(path, defaultPkg.name(), mappedDependent);
+            return new ResolvedSpecification(path, List.of(new ResolvedIg(defaultPkg.name(), null, mappedDependent)));
         }
-        return new ResolvedSpecification(targetDir, defaultPkg.name(), mappedDependent);
+        return new ResolvedSpecification(targetDir, List.of(new ResolvedIg(defaultPkg.name(), null, mappedDependent)));
     }
 
-    private static String defaultDependentForIgPackage(String packageName, IgRegistryConfig registryConfig,
-                                                       String igName, String igVersion) {
-        String mapped = igName != null ? registryConfig.resolveDependentPackage(igName, igVersion) : null;
-        if (mapped != null) {
-            return mapped;
-        }
+    private static String defaultDependentForIgPackage(String packageName) {
         if (HealthCmdConstants.CMD_DEFAULT_R5_IG_PACKAGE_NAME.equals(packageName)) {
             return HealthCmdConstants.CMD_DEFAULT_R5_DEPENDENT_PACKAGE;
         }
@@ -100,7 +123,7 @@ public final class SpecificationPathResolver {
     }
 
     public static boolean canResolveWithoutLocalSpec(ResolveRequest request) {
-        if (request.igName() != null && !request.igName().isEmpty()) {
+        if (!request.igReferences().isEmpty()) {
             return true;
         }
         if (request.specPathArg() != null && !request.specPathArg().trim().isEmpty()) {
@@ -136,8 +159,7 @@ public final class SpecificationPathResolver {
             String mode,
             String executionPath,
             String specPathArg,
-            String igName,
-            String igVersion,
+            List<String> igReferences,
             String registryUrl,
             String cacheDir,
             boolean forceDownload,
@@ -148,6 +170,12 @@ public final class SpecificationPathResolver {
     ) {
     }
 
-    public record ResolvedSpecification(Path specificationPath, String igPackageName, String mappedDependentPackage) {
+    /**
+     * One resolved {@code --ig} value: its real name/version, and the Ballerina package it maps to (if any).
+     */
+    public record ResolvedIg(String igName, String igVersion, String mappedDependentPackage) {
+    }
+
+    public record ResolvedSpecification(Path specificationPath, List<ResolvedIg> resolvedIgs) {
     }
 }

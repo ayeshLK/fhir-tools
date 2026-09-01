@@ -36,6 +36,7 @@ import java.io.PrintStream;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Path;
 import java.nio.file.Paths;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +63,7 @@ public class FhirSubCmd implements BLauncherCmd {
 
     //resolved path from the input parameter
     private Path specificationPath;
+    private List<SpecificationPathResolver.ResolvedIg> resolvedIgs = List.of();
     @CommandLine.Option(names = {"--help", "-h", "?"}, usageHelp = true, hidden = true)
     private boolean helpFlag;
 
@@ -111,8 +113,8 @@ public class FhirSubCmd implements BLauncherCmd {
     @CommandLine.Option(names = "--flat", description = "Aggregated mode only. Generate directly into -o/--output instead of nesting under fhir-service/. Keeps Ballerina.toml, .gitignore, OAS, and .choreo (unlike --minimal). No effect with --aggregate false")
     private boolean flat;
 
-    @CommandLine.Option(names = "--ig", description = "FHIR registry package reference as <name>[@version] (npm-style), e.g. hl7.fhir.us.core@8.0.1. Downloads from the registry when no local spec path is given. When the version is omitted, the CLI interactively lists published versions (or picks dist-tags.latest when run non-interactively)")
-    private String ig;
+    @CommandLine.Option(names = "--ig", description = "FHIR registry package reference as <name>[@version] (npm-style), e.g. hl7.fhir.us.core@8.0.1. Downloads from the registry when no local spec path is given. When the version is omitted, the CLI interactively lists published versions (or picks dist-tags.latest when run non-interactively). Repeatable: pass --ig more than once (template mode only) to merge profiles from multiple IGs for the same resource type into one service, dispatched by _profile -- every IG in a multi-IG run must have a known packageMappings entry")
+    private String[] ig;
 
     @CommandLine.Option(names = "--registry-url", description = "FHIR package registry base URL (default: https://packages.fhir.org)")
     private String registryUrl;
@@ -169,13 +171,26 @@ public class FhirSubCmd implements BLauncherCmd {
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
             HealthCmdUtils.exitError(exitWhenFinish);
         }
-        if (ig != null && !ig.trim().isEmpty() && !FhirIgPackageDownloader.isValidIgReference(ig)) {
-            printStream.println(HealthCmdConstants.PrintStrings.IG_REFERENCE_INVALID);
+        for (String reference : igReferences()) {
+            if (!FhirIgPackageDownloader.isValidIgReference(reference)) {
+                printStream.println(HealthCmdConstants.PrintStrings.IG_REFERENCE_INVALID);
+                printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
+                HealthCmdUtils.exitError(exitWhenFinish);
+                break;
+            }
+        }
+        if (igReferences().size() > 1 && !CMD_MODE_TEMPLATE.equals(mode)) {
+            printStream.println(HealthCmdConstants.PrintStrings.MULTI_IG_TEMPLATE_ONLY);
+            printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
+            HealthCmdUtils.exitError(exitWhenFinish);
+        }
+        if (igReferences().size() > 1 && dependentPackage != null && !dependentPackage.isEmpty()) {
+            printStream.println(HealthCmdConstants.PrintStrings.MULTI_IG_DEPENDENT_PACKAGE_CONFLICT);
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
             HealthCmdUtils.exitError(exitWhenFinish);
         }
         if (CMD_MODE_PACKAGE.equals(mode) && (argList == null || argList.isEmpty())
-                && (igName() == null || igName().isEmpty()) && !canResolveSpecificationFromRegistry()) {
+                && !hasIg() && !canResolveSpecificationFromRegistry()) {
             printStream.println(HealthCmdConstants.PrintStrings.SPEC_PATH_REQUIRED);
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
             HealthCmdUtils.exitError(exitWhenFinish);
@@ -194,7 +209,7 @@ public class FhirSubCmd implements BLauncherCmd {
         }
         if (CMD_MODE_TEMPLATE.equals(mode) &&
                 (dependentPackage == null || dependentPackage.isEmpty()) &&
-                (igName() == null || igName().isEmpty()) &&
+                !hasIg() &&
                 !canResolveSpecificationFromRegistry()) {
             printStream.println(HealthCmdConstants.PrintStrings.DEPENDENT_REQUIRED);
             printStream.println(HealthCmdConstants.PrintStrings.HELP_FOR_MORE_INFO);
@@ -281,8 +296,7 @@ public class FhirSubCmd implements BLauncherCmd {
                                 mode,
                                 executionPath.toString(),
                                 specPathArg,
-                                igName(),
-                                igVersion(),
+                                igReferences(),
                                 registryUrl,
                                 igCacheDir,
                                 forceIgDownload,
@@ -292,10 +306,11 @@ public class FhirSubCmd implements BLauncherCmd {
                                 printStream
                         ));
                 specificationPath = resolved.specificationPath();
-                if (CMD_MODE_TEMPLATE.equals(mode) && !explicitDependentPackage
-                        && resolved.mappedDependentPackage() != null) {
-                    printStream.println("[INFO] IG " + resolved.igPackageName()
-                            + " maps to published package " + resolved.mappedDependentPackage()
+                resolvedIgs = resolved.resolvedIgs();
+                if (CMD_MODE_TEMPLATE.equals(mode) && !explicitDependentPackage && resolvedIgs.size() == 1
+                        && resolvedIgs.get(0).mappedDependentPackage() != null) {
+                    printStream.println("[INFO] IG " + resolvedIgs.get(0).igName()
+                            + " maps to published package " + resolvedIgs.get(0).mappedDependentPackage()
                             + ". Embedding IG resources in the template (use --dependent-package to import that package instead).");
                 }
             } catch (BallerinaHealthException e) {
@@ -319,10 +334,12 @@ public class FhirSubCmd implements BLauncherCmd {
         argsMap.put("--resources", resources);
         argsMap.put("--minimal", minimal);
         argsMap.put("--flat", flat);
+        argsMap.put("--resolved-igs", resolvedIgs);
 
         Handler toolHandler = null;
         try {
-            toolHandler = HandlerFactory.createHandler(toolName, mode, printStream, specificationPath.toString());
+            toolHandler = HandlerFactory.createHandler(
+                    toolName, mode, printStream, specificationPath.toString(), resolvedIgs);
         } catch (BallerinaHealthException e) {
             printStream.println(e);
             throw new BLauncherException();
@@ -333,7 +350,7 @@ public class FhirSubCmd implements BLauncherCmd {
     }
 
     private boolean canResolveSpecificationFromRegistry() {
-        if (igName() != null && !igName().isEmpty()) {
+        if (hasIg()) {
             return true;
         }
         if (argList != null && !argList.isEmpty()) {
@@ -344,8 +361,7 @@ public class FhirSubCmd implements BLauncherCmd {
                         mode,
                         executionPath.toString(),
                         null,
-                        igName(),
-                        igVersion(),
+                        igReferences(),
                         registryUrl,
                         igCacheDir,
                         forceIgDownload,
@@ -357,19 +373,20 @@ public class FhirSubCmd implements BLauncherCmd {
     }
 
     /**
-     * Package name component of --ig (before the last '@'), or null when --ig isn't set.
+     * Trimmed, non-empty --ig values in the order given (possibly more than one -- see --ig's repeatable usage).
      */
-    private String igName() {
-        return (ig == null || ig.trim().isEmpty()) ? null
-                : FhirIgPackageDownloader.parseIgReference(ig).name();
+    private List<String> igReferences() {
+        if (ig == null || ig.length == 0) {
+            return List.of();
+        }
+        return Arrays.stream(ig)
+                .filter(value -> value != null && !value.trim().isEmpty())
+                .map(String::trim)
+                .toList();
     }
 
-    /**
-     * Version component of --ig (after the last '@'), or null when --ig isn't set.
-     */
-    private String igVersion() {
-        return (ig == null || ig.trim().isEmpty()) ? null
-                : FhirIgPackageDownloader.parseIgReference(ig).version();
+    private boolean hasIg() {
+        return !igReferences().isEmpty();
     }
 
     /**
