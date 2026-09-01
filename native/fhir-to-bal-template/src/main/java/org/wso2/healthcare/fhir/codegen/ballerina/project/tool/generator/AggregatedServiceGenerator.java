@@ -66,6 +66,7 @@ public class AggregatedServiceGenerator extends AbstractFHIRTemplateGenerator {
         AggregatedService aggregatedService = initializeAggregatedServiceWithDefaults(generatorProperties);
         
         templateContext.setProperty("aggregatedService", aggregatedService);
+        templateContext.setProperty("licenseYear", BallerinaProjectConstants.LICENSE_YEAR);
         templateContext.setProperty("basePackageImportIdentifier", generatorProperties.get("basePackageImportIdentifier"));
         templateContext.setProperty("servicePackageImportIdentifier", generatorProperties.get("servicePackageImportIdentifier"));
         templateContext.setProperty("dependentPackageImportIdentifier", generatorProperties.get("dependentPackageImportIdentifier"));
