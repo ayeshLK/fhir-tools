@@ -235,3 +235,51 @@ bal build             # the real check: Velocity syntax errors and the compiler-
 To revert to whichever `health` version was active before testing: `bal tool remove health:<version>
 --repository=local` (not `bal tool pull <old-version>` — pulling a version that's already cached locally does
 *not* reactivate it; removing the active version falls back to the next installed one automatically).
+
+## Known limitation: no multi-IG generation
+
+A real, validated requirement (confirmed against two independent hand-written services, `OrganizationService` and
+`PractitionerService`, in a real facade project) is generating a *single* resource type — e.g. `Organization` or
+`Practitioner` — whose profiles come from **two different IGs** (e.g. CARIN BB's `C4BBOrganization` and Da Vinci
+PDex Plan-Net's `PlannetOrganization`/`PlannetNetwork`), dispatched by `_profile` exactly like the multi-profile
+case above. **This is not possible today.** Three concrete reasons, not just "no flag for it yet":
+
+1. `--ig` accepts exactly one value per invocation — there is no repeatable `--ig`.
+2. Running the tool twice against the same `-o` doesn't merge — `serviceMap` (where profiles accumulate per
+   resource type, see above) is rebuilt from scratch in-memory every invocation and never persisted, so a second
+   run would overwrite the first run's `Organization`/`Practitioner` output, not add to it.
+3. `IncludedIGConfig` is always keyed to the literal constant `"FHIR"` (see `FhirTemplateGenHandler`'s
+   `populateIGConfig()`/`HealthCmdConstants.CMD_DEFAULT_IG_NAME`), not the real IG name — the plumbing between the
+   CLI and the codegen engine is single-IG-shaped end to end, even though `BallerinaProjectToolConfig` itself has
+   an unused `populateIgConfigs(JsonArray)` path reading a static `"includedIGs"` array that was clearly built
+   with multiple IGs in mind.
+
+**The good part: the dispatch-skeleton generation is profile-driven, not IG-driven** — `addResourceProfile()`
+doesn't care which IG a profile came from, and the union-type-alias + per-profile `search<ProfileName>` stub +
+`match _profile` mechanism (see above) would produce the exact right shape for a merged multi-IG resource type
+*without any changes*, if only it were fed profiles from more than one IG in a single run. The missing piece is
+narrower than a redesign: make `--ig` repeatable, resolve each into its own `spec/<name>/` (existing machinery,
+no new download logic needed), and feed every resolved IG's StructureDefinitions through the same
+`addResourceProfile()` pass tagged with its real IG name instead of the `"FHIR"` constant.
+
+This is coupled to the `packageMappings` auto-apply question directly below: without an auto-applying, accurate
+mapping, a multi-IG generation would embed *every* IG as a separate local module by default, even for IGs with a
+known-correct published package already available.
+
+## `packageMappings` (`tool-config.json`'s `fhir.igRegistry.packageMappings`): still name-only in code
+
+Despite being discussed at length and having confirmed, version-pinned mappings ready, **the code has not been
+updated yet** — don't assume adding entries to `tool-config.json` is sufficient on its own:
+
+- `IgRegistryConfig.resolveDependentPackage(String igName)` still looks up by bare IG name only. Adding a
+  version-suffixed key like `"hl7.fhir.us.carin-bb.r4@2.1.0"` to the JSON will silently never match anything
+  until this is changed to `resolveDependentPackage(igName, igVersion)`, keyed by `igName + "@" + igVersion`
+  (matching `--ig`'s own npm-style grammar) — the fix is small and does not depend on the open question below.
+- Whether an exact match should **auto-apply** `--dependent-package` (like the international-base-detection path
+  already does silently) or remain **advisory-only** (today's behavior — an `[INFO]` suggestion, local embedding
+  still happens by default) is an open decision, not yet made.
+- Confirmed, version-pinned mappings collected so far, not yet added to `tool-config.json`:
+  `hl7.fhir.us.core@6.1.0` → `ballerinax/health.fhir.r4.uscore501`,
+  `hl7.fhir.us.carin-bb.r4@2.1.0` → `ballerinax/health.fhir.r4.carinbb200`.
+  A package's own version-ish naming suffix does not reliably indicate the IG version it targets — confirm with
+  someone who knows, don't infer from the package name (`carinbb200` targets IG `2.1.0`, not `2.0.0`).
