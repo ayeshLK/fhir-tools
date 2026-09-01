@@ -266,20 +266,23 @@ This is coupled to the `packageMappings` auto-apply question directly below: wit
 mapping, a multi-IG generation would embed *every* IG as a separate local module by default, even for IGs with a
 known-correct published package already available.
 
-## `packageMappings` (`tool-config.json`'s `fhir.igRegistry.packageMappings`): still name-only in code
+## `packageMappings` (`tool-config.json`'s `fhir.igRegistry.packageMappings`)
 
-Despite being discussed at length and having confirmed, version-pinned mappings ready, **the code has not been
-updated yet** — don't assume adding entries to `tool-config.json` is sufficient on its own:
+`IgRegistryConfig.resolveDependentPackage(igName, igVersion)` is version-aware: it looks up
+`packageMappings.get(igName + "@" + igVersion)`, matching `--ig`'s own npm-style grammar, so a mapping only ever
+applies to the exact IG version it was confirmed for — it was originally keyed by bare IG name alone, which meant
+a mapping intended for one specific version silently matched *any* requested version of that IG (confirmed live:
+the `hl7.fhir.us.core` entry used to fire even when `--ig` resolved to latest/`9.0.0`, not just its intended
+`6.1.0`). Don't reintroduce a bare-name key — it would bring the same bug back.
 
-- `IgRegistryConfig.resolveDependentPackage(String igName)` still looks up by bare IG name only. Adding a
-  version-suffixed key like `"hl7.fhir.us.carin-bb.r4@2.1.0"` to the JSON will silently never match anything
-  until this is changed to `resolveDependentPackage(igName, igVersion)`, keyed by `igName + "@" + igVersion`
-  (matching `--ig`'s own npm-style grammar) — the fix is small and does not depend on the open question below.
-- Whether an exact match should **auto-apply** `--dependent-package` (like the international-base-detection path
-  already does silently) or remain **advisory-only** (today's behavior — an `[INFO]` suggestion, local embedding
-  still happens by default) is an open decision, not yet made.
-- Confirmed, version-pinned mappings collected so far, not yet added to `tool-config.json`:
-  `hl7.fhir.us.core@6.1.0` → `ballerinax/health.fhir.r4.uscore501`,
-  `hl7.fhir.us.carin-bb.r4@2.1.0` → `ballerinax/health.fhir.r4.carinbb200`.
-  A package's own version-ish naming suffix does not reliably indicate the IG version it targets — confirm with
-  someone who knows, don't infer from the package name (`carinbb200` targets IG `2.1.0`, not `2.0.0`).
+**Still advisory-only, not auto-applying.** A match prints an `[INFO]` suggestion; the IG still gets embedded
+locally by default unless the user adds `--dependent-package` themselves. Whether an exact match should instead
+**auto-apply** `--dependent-package` (the way the international-base-detection path already does silently) is an
+open decision, not yet made.
+
+Confirmed, version-pinned mappings currently in `tool-config.json`:
+`hl7.fhir.us.core@6.1.0` → `ballerinax/health.fhir.r4.uscore501`,
+`hl7.fhir.us.carin-bb.r4@2.1.0` → `ballerinax/health.fhir.r4.carinbb200`.
+A package's own version-ish naming suffix does not reliably indicate the IG version it targets — these were
+confirmed by someone who knows, not inferred from the name (`carinbb200` targets IG `2.1.0`, not `2.0.0`). Get
+confirmation before adding more; don't guess from the package name.
