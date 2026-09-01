@@ -58,7 +58,7 @@ public final class SpecificationPathResolver {
             Path targetDir = Paths.get(request.executionPath(), "spec",
                     FhirIgPackageDownloader.sanitizeIgDirectoryName(request.igName()));
             downloadIg(request, registryConfig, request.igName(), request.igVersion(), targetDir, downloadOptions);
-            String mapped = registryConfig.resolveDependentPackage(request.igName());
+            String mapped = registryConfig.resolveDependentPackage(request.igName(), request.igVersion());
             return new ResolvedSpecification(targetDir, request.igName(), mapped);
         }
 
@@ -78,7 +78,8 @@ public final class SpecificationPathResolver {
         Path targetDir = Paths.get(request.executionPath(), "spec",
                 HealthCmdConstants.CMD_DEFAULT_INTERNATIONAL_IG_DIR);
         downloadIg(request, registryConfig, defaultPkg.name(), defaultPkg.version(), targetDir, downloadOptions);
-        String mappedDependent = defaultDependentForIgPackage(defaultPkg.name(), registryConfig, request.igName());
+        String mappedDependent = defaultDependentForIgPackage(defaultPkg.name(), registryConfig, request.igName(),
+                request.igVersion());
         if (CMD_MODE_TEMPLATE.equals(request.mode())) {
             Path path = SpecificationPathUtils.resolveTemplateSpecificationPath(null, request.executionPath());
             return new ResolvedSpecification(path, defaultPkg.name(), mappedDependent);
@@ -87,8 +88,8 @@ public final class SpecificationPathResolver {
     }
 
     private static String defaultDependentForIgPackage(String packageName, IgRegistryConfig registryConfig,
-                                                       String igName) {
-        String mapped = igName != null ? registryConfig.resolveDependentPackage(igName) : null;
+                                                       String igName, String igVersion) {
+        String mapped = igName != null ? registryConfig.resolveDependentPackage(igName, igVersion) : null;
         if (mapped != null) {
             return mapped;
         }

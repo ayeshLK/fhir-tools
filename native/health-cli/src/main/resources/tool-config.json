@@ -15,7 +15,8 @@
         }
       },
       "packageMappings": {
-        "hl7.fhir.us.core": "ballerinax/health.fhir.r4.uscore501"
+        "hl7.fhir.us.core@6.1.0": "ballerinax/health.fhir.r4.uscore501",
+        "hl7.fhir.us.carin-bb.r4@2.1.0": "ballerinax/health.fhir.r4.carinbb200"
       }
     },
     "tools": {

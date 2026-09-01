@@ -131,8 +131,16 @@ public class IgRegistryConfig {
         return defaultPackages.getOrDefault(fhirVersion.toLowerCase(), defaultPackages.get("r4"));
     }
 
-    public String resolveDependentPackage(String igName) {
-        return packageMappings.get(igName);
+    /**
+     * Looks up a known published Ballerina package for an exact {@code <igName>@<igVersion>} match. Keyed by the
+     * full pair (not just the IG name) since a mapped package targets one specific IG version -- the package's
+     * own version-ish naming (e.g. "carinbb200") does not reliably indicate which IG version it was built from.
+     */
+    public String resolveDependentPackage(String igName, String igVersion) {
+        if (igName == null || igVersion == null) {
+            return null;
+        }
+        return packageMappings.get(igName + "@" + igVersion);
     }
 
     public record IgPackageRef(String name, String version) {
